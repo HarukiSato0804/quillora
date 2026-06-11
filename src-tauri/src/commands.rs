@@ -13,7 +13,7 @@ pub fn take_pending_open_path(state: tauri::State<'_, PendingOpen>) -> Option<St
     state.0.lock().unwrap().take()
 }
 
-const MAX_RECENT_FILES: usize = 10;
+const MAX_RECENT_FILES: usize = 20;
 
 fn push_recent(mut list: Vec<String>, path: String) -> Vec<String> {
     list.retain(|existing| existing != &path);
@@ -50,10 +50,54 @@ pub fn record_recent_file(
     path: String,
 ) -> Result<Vec<String>, String> {
     let store = recent_store_path(&app)?;
-    let list = push_recent(read_recent(&app), path);
+    // Canonicalize so the same file reached via different paths dedupes.
+    let canonical = fs::canonicalize(&path)
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or(path);
+    let list = push_recent(read_recent(&app), canonical);
     let json = serde_json::to_string_pretty(&list).map_err(|err| err.to_string())?;
     fs::write(&store, json).map_err(|err| err.to_string())?;
     Ok(list)
+}
+
+fn session_store_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|err| err.to_string())?;
+    fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
+    Ok(dir.join("session.json"))
+}
+
+#[tauri::command]
+pub fn save_session(app: tauri::AppHandle, json: String) -> Result<(), String> {
+    let store = session_store_path(&app)?;
+    fs::write(&store, json).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+pub fn load_session(app: tauri::AppHandle) -> Option<String> {
+    session_store_path(&app)
+        .ok()
+        .and_then(|path| fs::read_to_string(path).ok())
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileStat {
+    pub path: String,
+    pub mtime_ms: Option<f64>,
+}
+
+#[tauri::command]
+pub fn stat_files(paths: Vec<String>) -> Vec<FileStat> {
+    paths
+        .into_iter()
+        .map(|path| {
+            let mtime_ms = file_mtime_ms(Path::new(&path));
+            FileStat { path, mtime_ms }
+        })
+        .collect()
 }
 
 #[tauri::command]
@@ -150,11 +194,29 @@ mod tests {
 
     #[test]
     fn push_recent_caps_the_list() {
-        let seed: Vec<String> = (0..10).map(|i| format!("/{i}.md")).collect();
+        let seed: Vec<String> = (0..20).map(|i| format!("/{i}.md")).collect();
         let list = push_recent(seed, "/new.md".into());
-        assert_eq!(list.len(), 10);
+        assert_eq!(list.len(), 20);
         assert_eq!(list[0], "/new.md");
-        assert!(!list.contains(&"/9.md".to_string()));
+        assert!(!list.contains(&"/19.md".to_string()));
+    }
+
+    #[test]
+    fn stat_files_returns_mtime_for_existing_and_none_for_missing() {
+        let dir = std::env::temp_dir().join("markflow-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("stat-test.md");
+        std::fs::write(&file, "x").unwrap();
+
+        let stats = super::stat_files(vec![
+            file.to_string_lossy().into_owned(),
+            dir.join("nope.md").to_string_lossy().into_owned(),
+        ]);
+        assert_eq!(stats.len(), 2);
+        assert!(stats[0].mtime_ms.is_some());
+        assert!(stats[1].mtime_ms.is_none());
+
+        std::fs::remove_file(&file).ok();
     }
 }
 

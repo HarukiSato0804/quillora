@@ -59,6 +59,30 @@ export async function copyTextToClipboard(text: string): Promise<void> {
   await invoke("copy_text_to_clipboard", { text });
 }
 
+export async function saveSession(json: string): Promise<void> {
+  await invoke("save_session", { json });
+}
+
+export async function loadSession(): Promise<string | null> {
+  return invoke<string | null>("load_session");
+}
+
+export type FileStatPayload = {
+  path: string;
+  mtimeMs: number | null;
+};
+
+export async function statFiles(paths: string[]): Promise<FileStatPayload[]> {
+  return invoke<FileStatPayload[]>("stat_files", { paths });
+}
+
+export async function confirmReloadFromDisk(title: string): Promise<boolean> {
+  return ask(
+    `"${title}" changed on disk and you have unsaved edits.\nReload from disk and discard your edits?`,
+    { title: "Markflow", kind: "warning" }
+  );
+}
+
 export async function takePendingOpenPath(): Promise<string | null> {
   return invoke<string | null>("take_pending_open_path");
 }

@@ -7,6 +7,12 @@ export type DocumentSelection = {
   head: number;
 };
 
+export type ExternalChangeState =
+  | "clean"
+  | "changed-on-disk"
+  | "deleted-on-disk"
+  | "conflict";
+
 export type OpenDocument = {
   id: DocumentId;
   kind: DocumentKind;
@@ -21,6 +27,7 @@ export type OpenDocument = {
   openedAt: number;
   lastActivatedAt: number;
   externalVersion: number;
+  externalState: ExternalChangeState;
   fileMtimeMs: number | null;
   isSaving: boolean;
   isLoading: boolean;
@@ -108,6 +115,7 @@ function baseDocument(id: DocumentId, now: number): OpenDocument {
     openedAt: now,
     lastActivatedAt: now,
     externalVersion: 0,
+    externalState: "clean",
     fileMtimeMs: null,
     isSaving: false,
     isLoading: false,
@@ -118,6 +126,9 @@ function baseDocument(id: DocumentId, now: number): OpenDocument {
 export type CreateDocumentOptions = {
   id?: DocumentId;
   now?: number;
+  // Restored unsaved content; the document starts dirty so it is never
+  // silently lost.
+  text?: string;
 };
 
 export function newUntitledDocument(
@@ -126,9 +137,13 @@ export function newUntitledDocument(
 ): WorkspaceState {
   const id = options.id ?? generateId();
   const now = options.now ?? Date.now();
+  const doc = baseDocument(id, now);
   return {
     ...state,
-    documents: [...state.documents, baseDocument(id, now)],
+    documents: [
+      ...state.documents,
+      options.text ? { ...doc, text: options.text } : doc,
+    ],
     activeDocumentId: id,
   };
 }
@@ -252,8 +267,70 @@ export function markDocumentSaved(
     text,
     lastSavedText: text,
     fileMtimeMs: fileMtimeMs ?? doc.fileMtimeMs,
+    externalState: "clean",
     isSaving: false,
     lastError: null,
+  }));
+}
+
+export type DiskStat = {
+  path: string;
+  // null means the file no longer exists on disk.
+  mtimeMs: number | null;
+};
+
+export function externalChangeState(
+  doc: OpenDocument,
+  diskMtimeMs: number | null
+): ExternalChangeState {
+  if (doc.path === null) {
+    return "clean";
+  }
+  if (diskMtimeMs === null) {
+    return "deleted-on-disk";
+  }
+  if (doc.fileMtimeMs !== null && diskMtimeMs > doc.fileMtimeMs) {
+    return isDirty(doc) ? "conflict" : "changed-on-disk";
+  }
+  return "clean";
+}
+
+export function applyDiskStates(
+  state: WorkspaceState,
+  stats: DiskStat[]
+): WorkspaceState {
+  const statByPath = new Map(stats.map((stat) => [stat.path, stat]));
+  return {
+    ...state,
+    documents: state.documents.map((doc) => {
+      if (doc.path === null) {
+        return doc;
+      }
+      const stat = statByPath.get(doc.path);
+      if (!stat) {
+        return doc;
+      }
+      const next = externalChangeState(doc, stat.mtimeMs);
+      return next === doc.externalState
+        ? doc
+        : { ...doc, externalState: next };
+    }),
+  };
+}
+
+export function reloadDocumentFromDisk(
+  state: WorkspaceState,
+  id: DocumentId,
+  text: string,
+  fileMtimeMs: number | null
+): WorkspaceState {
+  return updateDocument(state, id, (doc) => ({
+    ...doc,
+    text,
+    lastSavedText: text,
+    fileMtimeMs,
+    externalState: "clean",
+    externalVersion: doc.externalVersion + 1,
   }));
 }
 

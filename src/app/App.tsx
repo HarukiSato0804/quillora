@@ -31,9 +31,12 @@ import {
   addDocuments,
   createWorkspace,
   findDocumentByCanonicalPath,
+  applyDiskStates,
+  externalChangeState,
   isDirty,
   markDocumentSaved,
   newUntitledDocument,
+  reloadDocumentFromDisk,
   setDropActive,
   toggleFocusMode,
   toggleOutline,
@@ -51,17 +54,26 @@ import {
   type CloseIntent,
 } from "../editor/store/closeFlow";
 import {
+  buildRestoredWorkspace,
+  isPersistedWorkspace,
+  serializeWorkspace,
+} from "../editor/store/sessionStore";
+import {
   confirmDiscardChanges,
+  confirmReloadFromDisk,
   copyTextToClipboard,
   getRecentFiles,
+  loadSession,
   pickMarkdownPaths,
   readMarkdownFiles,
   recordRecentFile,
   revealInFinder,
   saveMarkdownDocument,
   saveMarkdownDocumentAs,
+  saveSession,
   showInfo,
   showOpenProblems,
+  statFiles,
   takePendingOpenPath,
   type ReadMarkdownFilesResult,
 } from "../editor/tauri/fileApi";
@@ -379,6 +391,167 @@ export function App() {
     getRecentFiles()
       .then(setRecentFiles)
       .catch(() => {});
+  }, []);
+
+  // Session restore: rebuild the previous workspace once at startup.
+  // The restore only replaces a single pristine untitled document, so it
+  // can never clobber content the user already typed or a file opened
+  // from Finder before the session loaded.
+  useEffect(() => {
+    const restore = async () => {
+      const json = await loadSession();
+      if (!json) {
+        return;
+      }
+      const persisted: unknown = JSON.parse(json);
+      if (!isPersistedWorkspace(persisted)) {
+        return;
+      }
+      const filePaths = persisted.openDocuments
+        .map((doc) => doc.path)
+        .filter((path): path is string => path !== null);
+      const result: ReadMarkdownFilesResult =
+        filePaths.length > 0
+          ? await readMarkdownFiles(filePaths)
+          : { files: [], errors: [] };
+
+      setWorkspace((current) => {
+        const pristine =
+          current.documents.length === 1 &&
+          current.documents[0].kind === "untitled" &&
+          current.documents[0].text === "";
+        if (!pristine) {
+          return current;
+        }
+        return buildRestoredWorkspace(
+          persisted,
+          result.files.map((file) => ({
+            path: file.path,
+            text: file.contents,
+            mtimeMs: file.mtimeMs,
+          }))
+        );
+      });
+
+      if (result.errors.length > 0) {
+        await showOpenProblems(
+          result.errors.map(
+            (error) => `${error.path}: could not restore (${error.message})`
+          )
+        ).catch(() => {});
+      }
+    };
+    void restore().catch(() => {});
+  }, []);
+
+  // Persist the session whenever the workspace settles for a moment.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void saveSession(
+        JSON.stringify(serializeWorkspace(workspaceRef.current))
+      ).catch(() => {});
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [workspace]);
+
+  // External change polling (every 5s and on window focus). Clean
+  // documents reload automatically; dirty ones prompt once per conflict.
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      const ws = workspaceRef.current;
+      const paths = ws.documents
+        .map((doc) => doc.path)
+        .filter((path): path is string => path !== null);
+      if (paths.length === 0) {
+        return;
+      }
+      let stats;
+      try {
+        stats = await statFiles(paths);
+      } catch {
+        // Stat errors must never crash the app; try again next cycle.
+        return;
+      }
+      if (cancelled) {
+        return;
+      }
+
+      const current = workspaceRef.current;
+      const statByPath = new Map(stats.map((stat) => [stat.path, stat]));
+      const reloadPaths: string[] = [];
+      const conflicts: Array<{ id: DocumentId; path: string; title: string }> =
+        [];
+      for (const doc of current.documents) {
+        if (doc.path === null) {
+          continue;
+        }
+        const stat = statByPath.get(doc.path);
+        if (!stat) {
+          continue;
+        }
+        const nextState = externalChangeState(doc, stat.mtimeMs);
+        if (nextState === "changed-on-disk") {
+          reloadPaths.push(doc.path);
+        } else if (
+          nextState === "conflict" &&
+          doc.externalState !== "conflict"
+        ) {
+          conflicts.push({ id: doc.id, path: doc.path, title: doc.title });
+        }
+      }
+
+      setWorkspace((ws2) => applyDiskStates(ws2, stats));
+
+      if (reloadPaths.length > 0) {
+        const result = await readMarkdownFiles(reloadPaths);
+        if (cancelled) {
+          return;
+        }
+        setWorkspace((ws2) => {
+          let next = ws2;
+          for (const file of result.files) {
+            const doc = findDocumentByCanonicalPath(next, file.path);
+            if (doc && !isDirty(doc)) {
+              next = reloadDocumentFromDisk(
+                next,
+                doc.id,
+                file.contents,
+                file.mtimeMs
+              );
+            }
+          }
+          return next;
+        });
+      }
+
+      for (const conflict of conflicts) {
+        const reload = await confirmReloadFromDisk(conflict.title).catch(
+          () => false
+        );
+        if (cancelled) {
+          return;
+        }
+        if (reload) {
+          const result = await readMarkdownFiles([conflict.path]);
+          const file = result.files[0];
+          if (file) {
+            setWorkspace((ws2) =>
+              reloadDocumentFromDisk(ws2, conflict.id, file.contents, file.mtimeMs)
+            );
+          }
+        }
+      }
+    };
+
+    const interval = setInterval(() => void check(), 5_000);
+    const onFocus = () => void check();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+    };
   }, []);
 
   // Rebuild the native menu only when something that affects it changes

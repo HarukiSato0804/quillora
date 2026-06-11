@@ -172,6 +172,11 @@ body {
   flex: 1;
 }
 
+.status-external-warning {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
 .status-dirty {
   color: #b45309;
   font-weight: 600;

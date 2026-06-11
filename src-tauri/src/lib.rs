@@ -20,7 +20,10 @@ pub fn run() {
             commands::get_recent_files,
             commands::record_recent_file,
             commands::reveal_in_finder,
-            commands::copy_text_to_clipboard
+            commands::copy_text_to_clipboard,
+            commands::save_session,
+            commands::load_session,
+            commands::stat_files
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
