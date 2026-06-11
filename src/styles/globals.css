@@ -180,3 +180,38 @@ body {
 .status-saved {
   color: #15803d;
 }
+
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  background: rgba(9, 105, 218, 0.08);
+  border: 3px dashed rgba(9, 105, 218, 0.55);
+  border-radius: 8px;
+}
+
+.drop-overlay-text {
+  padding: 12px 24px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #0969da;
+  font-size: 16px;
+  font-weight: 600;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  .drop-overlay {
+    background: rgba(88, 166, 255, 0.12);
+    border-color: rgba(88, 166, 255, 0.6);
+  }
+
+  .drop-overlay-text {
+    background: rgba(22, 27, 34, 0.92);
+    color: #58a6ff;
+  }
+}

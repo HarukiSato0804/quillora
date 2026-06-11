@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { listen } from "@tauri-apps/api/event";
 import { AppShell } from "./AppShell";
 import { setupAppMenu } from "./menu";
@@ -18,6 +19,7 @@ import {
   isDirty,
   markDocumentSaved,
   newUntitledDocument,
+  setDropActive,
   updateDocumentText,
   windowTitle,
   type DocumentId,
@@ -42,6 +44,7 @@ import {
   type ReadMarkdownFilesResult,
 } from "../editor/tauri/fileApi";
 import { planOpenPaths } from "../editor/files/openPipeline";
+import { splitDroppedPaths } from "../editor/files/dropClassification";
 
 export function App() {
   const [workspace, setWorkspace] = useState<WorkspaceState>(() =>
@@ -289,6 +292,37 @@ export function App() {
     };
   }, []);
 
+  // Finder drag-and-drop. Markdown files flow into openPaths (same
+  // pipeline as the Open dialog); everything else is reported.
+  const handleDrop = useCallback(
+    async (paths: string[]) => {
+      const { markdownPaths, problems } = splitDroppedPaths(paths);
+      if (markdownPaths.length > 0) {
+        await openPaths(markdownPaths);
+      }
+      if (problems.length > 0) {
+        await showOpenProblems(problems).catch(() => {});
+      }
+    },
+    [openPaths]
+  );
+
+  useEffect(() => {
+    const unlistenPromise = getCurrentWebview().onDragDropEvent((event) => {
+      if (event.payload.type === "enter" || event.payload.type === "over") {
+        setWorkspace((ws) => setDropActive(ws, true));
+      } else if (event.payload.type === "drop") {
+        setWorkspace((ws) => setDropActive(ws, false));
+        void handleDrop(event.payload.paths);
+      } else {
+        setWorkspace((ws) => setDropActive(ws, false));
+      }
+    });
+    return () => {
+      void unlistenPromise.then((unlisten) => unlisten()).catch(() => {});
+    };
+  }, [handleDrop]);
+
   // Files opened from Finder (file association) arrive as a pending path.
   useEffect(() => {
     const consumePending = async () => {
@@ -387,6 +421,11 @@ export function App() {
         onChange={handleChange}
         imageBaseDir={active?.path ? dirname(active.path) : null}
       />
+      {workspace.dropActive && (
+        <div className="drop-overlay" aria-hidden="true">
+          <div className="drop-overlay-text">Drop Markdown files to open</div>
+        </div>
+      )}
     </AppShell>
   );
 }

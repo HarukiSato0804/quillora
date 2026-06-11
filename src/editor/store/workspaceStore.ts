@@ -257,6 +257,14 @@ export function markDocumentSaved(
   }));
 }
 
+// Idempotent so repeated drag "over" events do not cause re-renders.
+export function setDropActive(
+  state: WorkspaceState,
+  dropActive: boolean
+): WorkspaceState {
+  return state.dropActive === dropActive ? state : { ...state, dropActive };
+}
+
 export function removeDocuments(
   state: WorkspaceState,
   ids: DocumentId[]

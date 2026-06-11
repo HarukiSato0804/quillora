@@ -12,11 +12,13 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Markflow",
         "width": 1100,
         "height": 760,
         "minWidth": 600,
-        "minHeight": 400
+        "minHeight": 400,
+        "dragDropEnabled": true
       }
     ],
     "security": {
