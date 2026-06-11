@@ -56,6 +56,49 @@ pub fn record_recent_file(
     Ok(list)
 }
 
+#[tauri::command]
+pub fn reveal_in_finder(path: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(&path)
+            .spawn()
+            .map_err(|err| err.to_string())?;
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = path;
+        Err("Reveal in Finder is only available on macOS.".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn copy_text_to_clipboard(text: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        use std::io::Write;
+        let mut child = std::process::Command::new("pbcopy")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|err| err.to_string())?;
+        child
+            .stdin
+            .as_mut()
+            .ok_or_else(|| "failed to open pbcopy stdin".to_string())?
+            .write_all(text.as_bytes())
+            .map_err(|err| err.to_string())?;
+        child.wait().map_err(|err| err.to_string())?;
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = text;
+        Err("Clipboard copy is only implemented on macOS.".to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{push_recent, read_markdown_files};

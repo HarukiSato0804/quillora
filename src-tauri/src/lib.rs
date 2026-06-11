@@ -18,7 +18,9 @@ pub fn run() {
             commands::write_markdown_file,
             commands::take_pending_open_path,
             commands::get_recent_files,
-            commands::record_recent_file
+            commands::record_recent_file,
+            commands::reveal_in_finder,
+            commands::copy_text_to_clipboard
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

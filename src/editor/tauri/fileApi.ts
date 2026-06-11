@@ -47,6 +47,18 @@ export async function showOpenProblems(problems: string[]): Promise<void> {
   await message(problems.join("\n"), { title: "Markflow", kind: "warning" });
 }
 
+export async function showInfo(text: string): Promise<void> {
+  await message(text, { title: "Markflow", kind: "info" });
+}
+
+export async function revealInFinder(path: string): Promise<void> {
+  await invoke("reveal_in_finder", { path });
+}
+
+export async function copyTextToClipboard(text: string): Promise<void> {
+  await invoke("copy_text_to_clipboard", { text });
+}
+
 export async function takePendingOpenPath(): Promise<string | null> {
   return invoke<string | null>("take_pending_open_path");
 }

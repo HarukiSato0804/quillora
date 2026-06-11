@@ -2,14 +2,29 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { listen } from "@tauri-apps/api/event";
+import { openSearchPanel } from "@codemirror/search";
+import type { EditorState, TransactionSpec } from "@codemirror/state";
+import type { EditorView } from "@codemirror/view";
 import { AppShell } from "./AppShell";
 import { setupAppMenu } from "./menu";
+import {
+  commandForKeyEvent,
+  createCommands,
+  type CommandHandlers,
+} from "./commands";
 import { MarkdownEditor } from "../editor/MarkdownEditor";
 import { Sidebar } from "../editor/ui/Sidebar";
 import { StatusBar } from "../editor/ui/StatusBar";
+import { TabsBar } from "../editor/ui/TabsBar";
 import { parseHeadings } from "../editor/parser/parseHeadings";
 import { dirname } from "../editor/parser/parseImages";
-import { TabsBar } from "../editor/ui/TabsBar";
+import {
+  insertLink as insertLinkSpec,
+  toggleInlineMarker,
+  toggleLinePrefix,
+  toggleOrderedList,
+  wrapCodeBlock,
+} from "../editor/commands/formatting";
 import {
   activateDocument,
   activeDocument,
@@ -20,6 +35,10 @@ import {
   markDocumentSaved,
   newUntitledDocument,
   setDropActive,
+  toggleFocusMode,
+  toggleOutline,
+  toggleSidebar,
+  toggleTypewriterMode,
   updateDocumentText,
   windowTitle,
   type DocumentId,
@@ -33,12 +52,15 @@ import {
 } from "../editor/store/closeFlow";
 import {
   confirmDiscardChanges,
+  copyTextToClipboard,
   getRecentFiles,
   pickMarkdownPaths,
   readMarkdownFiles,
   recordRecentFile,
+  revealInFinder,
   saveMarkdownDocument,
   saveMarkdownDocumentAs,
+  showInfo,
   showOpenProblems,
   takePendingOpenPath,
   type ReadMarkdownFilesResult,
@@ -52,6 +74,8 @@ export function App() {
   );
   const workspaceRef = useRef(workspace);
   workspaceRef.current = workspace;
+
+  const viewRef = useRef<EditorView | null>(null);
 
   const active = activeDocument(workspace);
   const activeText = active?.text ?? "";
@@ -90,8 +114,8 @@ export function App() {
   }, []);
 
   // The single pipeline behind Open dialog, Open Recent, Finder open, and
-  // (later) drag-and-drop: classify paths, read new ones in one batch,
-  // activate the last relevant document, and surface per-file problems.
+  // drag-and-drop: classify paths, read new ones in one batch, activate
+  // the last relevant document, and surface per-file problems.
   const openPaths = useCallback(
     async (paths: string[]) => {
       const plan = planOpenPaths(workspaceRef.current, paths);
@@ -152,7 +176,7 @@ export function App() {
     [noteRecent]
   );
 
-  const openDocument = useCallback(async () => {
+  const openDocuments = useCallback(async () => {
     const paths = await pickMarkdownPaths();
     if (paths.length > 0) {
       await openPaths(paths);
@@ -184,16 +208,24 @@ export function App() {
     setWorkspace((ws) => markDocumentSaved(ws, doc.id, doc.path!, doc.text));
   }, [saveDocumentAs]);
 
-  const openPath = useCallback(
-    async (path: string) => {
-      await openPaths([path]);
-    },
-    [openPaths]
-  );
+  const saveAllDocuments = useCallback(async () => {
+    const ws = workspaceRef.current;
+    for (const doc of ws.documents.filter(isDirty)) {
+      if (doc.path !== null) {
+        await saveMarkdownDocument(doc.path, doc.text);
+        setWorkspace((current) =>
+          markDocumentSaved(current, doc.id, doc.path!, doc.text)
+        );
+      } else if (doc.id === ws.activeDocumentId) {
+        // Untitled documents need a dialog; only prompt for the active one.
+        await saveDocumentAs();
+      }
+    }
+  }, [saveDocumentAs]);
 
-  // All close paths (tab close button, middle click, Cmd+W) go through the
-  // close flow; the UI never removes documents directly. The first version
-  // maps the confirmation dialog onto discard/cancel.
+  // All close paths (tab close button, middle click, Cmd+W, menu) go
+  // through the close flow; the UI never removes documents directly. The
+  // first version maps the confirmation dialog onto discard/cancel.
   const closeWithIntent = useCallback(async (intent: CloseIntent) => {
     const plan = planClose(workspaceRef.current, intent);
     if (plan.targets.length === 0) {
@@ -235,11 +267,112 @@ export function App() {
     });
   }, []);
 
+  const openPath = useCallback(
+    async (path: string) => {
+      await openPaths([path]);
+    },
+    [openPaths]
+  );
+
   const quitApp = useCallback(() => {
     // Route quit through the window close so the unsaved-changes
     // confirmation in onCloseRequested applies to Cmd+Q as well.
     void getCurrentWindow().close();
   }, []);
+
+  const withEditor = useCallback(
+    (makeSpec: (state: EditorState) => TransactionSpec) => {
+      const view = viewRef.current;
+      if (!view) {
+        return;
+      }
+      view.dispatch(makeSpec(view.state));
+      view.focus();
+    },
+    []
+  );
+
+  // Every user-facing action lives in the command registry; the menu,
+  // keyboard shortcuts, and toolbar all run the same entries.
+  const commandHandlers: CommandHandlers = useMemo(
+    () => ({
+      newDocument: () => void newDocument(),
+      openDocuments: () => void openDocuments(),
+      saveDocument: () => void saveDocument(),
+      saveDocumentAs: () => void saveDocumentAs(),
+      saveAllDocuments: () => void saveAllDocuments(),
+      closeActiveDocument: () => {
+        const activeId = workspaceRef.current.activeDocumentId;
+        if (activeId !== null) {
+          closeTab(activeId);
+        }
+      },
+      closeOtherDocuments: () => {
+        const activeId = workspaceRef.current.activeDocumentId;
+        if (activeId !== null) {
+          void closeWithIntent({ type: "others", exceptDocumentId: activeId });
+        }
+      },
+      revealInFinder: () => {
+        const path = activeDocument(workspaceRef.current)?.path;
+        if (path) {
+          void revealInFinder(path).catch(() => {});
+        }
+      },
+      copyFilePath: () => {
+        const path = activeDocument(workspaceRef.current)?.path;
+        if (path) {
+          void copyTextToClipboard(path).catch(() => {});
+        }
+      },
+      toggleSidebar: () => setWorkspace(toggleSidebar),
+      toggleOutline: () => setWorkspace(toggleOutline),
+      toggleFocusMode: () => setWorkspace(toggleFocusMode),
+      toggleTypewriterMode: () => setWorkspace(toggleTypewriterMode),
+      toggleBold: () => withEditor((state) => toggleInlineMarker(state, "**")),
+      toggleItalic: () => withEditor((state) => toggleInlineMarker(state, "*")),
+      toggleInlineCode: () =>
+        withEditor((state) => toggleInlineMarker(state, "`")),
+      insertLink: () => withEditor(insertLinkSpec),
+      insertCodeBlock: () => withEditor(wrapCodeBlock),
+      insertQuote: () => withEditor((state) => toggleLinePrefix(state, "> ")),
+      insertOrderedList: () => withEditor(toggleOrderedList),
+      insertUnorderedList: () =>
+        withEditor((state) => toggleLinePrefix(state, "- ")),
+      insertTaskList: () =>
+        withEditor((state) => toggleLinePrefix(state, "- [ ] ")),
+      find: () => {
+        if (viewRef.current) {
+          openSearchPanel(viewRef.current);
+        }
+      },
+      replace: () => {
+        // CodeMirror's search panel includes the replace controls.
+        if (viewRef.current) {
+          openSearchPanel(viewRef.current);
+        }
+      },
+      openSettings: () =>
+        void showInfo("Settings will arrive in a future update.").catch(
+          () => {}
+        ),
+    }),
+    [
+      newDocument,
+      openDocuments,
+      saveDocument,
+      saveDocumentAs,
+      saveAllDocuments,
+      closeTab,
+      closeWithIntent,
+      withEditor,
+    ]
+  );
+
+  const commands = useMemo(
+    () => createCommands(commandHandlers),
+    [commandHandlers]
+  );
 
   // Load the persisted recent-files list once at startup.
   useEffect(() => {
@@ -248,34 +381,27 @@ export function App() {
       .catch(() => {});
   }, []);
 
-  // Native menu (File / Edit / Window) with macOS accelerators. Rebuilt
-  // whenever the recent-files list changes.
+  // Rebuild the native menu only when something that affects it changes
+  // (enabled states or the recent list), not on every keystroke.
+  const menuSignature = JSON.stringify({
+    hasActive: active !== null,
+    hasPath: active?.path != null,
+    anyDirty: workspace.documents.some(isDirty),
+    multi: workspace.documents.length > 1,
+    recentFiles,
+  });
   useEffect(() => {
-    void setupAppMenu(
-      {
-        onNew: () => void newDocument(),
-        onOpen: () => void openDocument(),
-        onOpenRecent: (path) =>
-          void openPath(path).catch(() => {
-            // The file may have been moved or deleted since it was recorded.
-          }),
-        onSave: () => void saveDocument(),
-        onSaveAs: () => void saveDocumentAs(),
-        onQuit: quitApp,
-      },
-      recentFiles
-    ).catch(() => {
+    void setupAppMenu(commands, workspaceRef.current, recentFiles, {
+      onOpenRecent: (path) =>
+        void openPath(path).catch(() => {
+          // The file may have been moved or deleted since it was recorded.
+        }),
+      onQuit: quitApp,
+    }).catch(() => {
       // Outside Tauri there is no native menu.
     });
-  }, [
-    newDocument,
-    openDocument,
-    openPath,
-    saveDocument,
-    saveDocumentAs,
-    quitApp,
-    recentFiles,
-  ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [menuSignature, commands, openPath, quitApp]);
 
   // Confirm before closing the window when any document has unsaved changes.
   useEffect(() => {
@@ -342,20 +468,22 @@ export function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!event.metaKey || event.ctrlKey || event.altKey) {
+      if (!event.metaKey || event.ctrlKey) {
         return;
       }
-      if (event.shiftKey && event.code === "BracketLeft") {
+      // Tab navigation is workspace plumbing rather than a user command,
+      // so it is handled outside the registry.
+      if (event.shiftKey && !event.altKey && event.code === "BracketLeft") {
         event.preventDefault();
         switchTabBy(-1);
         return;
       }
-      if (event.shiftKey && event.code === "BracketRight") {
+      if (event.shiftKey && !event.altKey && event.code === "BracketRight") {
         event.preventDefault();
         switchTabBy(1);
         return;
       }
-      if (!event.shiftKey && /^[1-9]$/.test(event.key)) {
+      if (!event.shiftKey && !event.altKey && /^[1-9]$/.test(event.key)) {
         const docs = workspaceRef.current.documents;
         const index = Number(event.key) - 1;
         if (index < docs.length) {
@@ -364,38 +492,15 @@ export function App() {
         }
         return;
       }
-      const key = event.key.toLowerCase();
-      if (key === "n" && !event.shiftKey) {
+      const command = commandForKeyEvent(commands, event);
+      if (command && command.enabled(workspaceRef.current)) {
         event.preventDefault();
-        void newDocument();
-      } else if (key === "o" && !event.shiftKey) {
-        event.preventDefault();
-        void openDocument();
-      } else if (key === "w" && !event.shiftKey) {
-        event.preventDefault();
-        const activeId = workspaceRef.current.activeDocumentId;
-        if (activeId !== null) {
-          closeTab(activeId);
-        }
-      } else if (key === "s" && event.shiftKey) {
-        event.preventDefault();
-        void saveDocumentAs();
-      } else if (key === "s") {
-        event.preventDefault();
-        void saveDocument();
+        void command.run();
       }
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [
-    newDocument,
-    openDocument,
-    saveDocument,
-    saveDocumentAs,
-    closeTab,
-    activateTab,
-    switchTabBy,
-  ]);
+  }, [commands, activateTab, switchTabBy]);
 
   const tabsBar = (
     <TabsBar
@@ -408,18 +513,30 @@ export function App() {
 
   return (
     <AppShell
+      focusMode={workspace.focusMode}
       tabsBar={tabsBar}
-      sidebar={<Sidebar headings={headings} />}
+      sidebar={
+        workspace.sidebarVisible ? (
+          <Sidebar
+            headings={headings}
+            outlineVisible={workspace.outlineVisible}
+          />
+        ) : null
+      }
       statusBar={<StatusBar document={active} />}
-      onNew={newDocument}
-      onOpen={openDocument}
-      onSave={saveDocument}
-      onSaveAs={saveDocumentAs}
+      onNew={commandHandlers.newDocument}
+      onOpen={commandHandlers.openDocuments}
+      onSave={commandHandlers.saveDocument}
+      onSaveAs={commandHandlers.saveDocumentAs}
     >
       <MarkdownEditor
         value={activeText}
         onChange={handleChange}
         imageBaseDir={active?.path ? dirname(active.path) : null}
+        typewriterMode={workspace.typewriterMode}
+        onViewReady={(view) => {
+          viewRef.current = view;
+        }}
       />
       {workspace.dropActive && (
         <div className="drop-overlay" aria-hidden="true">

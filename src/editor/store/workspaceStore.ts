@@ -257,6 +257,22 @@ export function markDocumentSaved(
   }));
 }
 
+export function toggleSidebar(state: WorkspaceState): WorkspaceState {
+  return { ...state, sidebarVisible: !state.sidebarVisible };
+}
+
+export function toggleOutline(state: WorkspaceState): WorkspaceState {
+  return { ...state, outlineVisible: !state.outlineVisible };
+}
+
+export function toggleFocusMode(state: WorkspaceState): WorkspaceState {
+  return { ...state, focusMode: !state.focusMode };
+}
+
+export function toggleTypewriterMode(state: WorkspaceState): WorkspaceState {
+  return { ...state, typewriterMode: !state.typewriterMode };
+}
+
 // Idempotent so repeated drag "over" events do not cause re-renders.
 export function setDropActive(
   state: WorkspaceState,

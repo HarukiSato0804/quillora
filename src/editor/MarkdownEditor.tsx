@@ -10,17 +10,22 @@ import { imageDecorations } from "./extensions/imageDecorations";
 import { mathDecorations } from "./extensions/mathDecorations";
 import { tableDecorations } from "./extensions/tableDecorations";
 import { mermaidDecorations } from "./extensions/mermaidDecorations";
+import { typewriterScroll } from "./extensions/typewriterScroll";
 
 type MarkdownEditorProps = {
   value: string;
   onChange: (value: string) => void;
   imageBaseDir: string | null;
+  typewriterMode: boolean;
+  onViewReady?: (view: EditorView) => void;
 };
 
 export function MarkdownEditor({
   value,
   onChange,
   imageBaseDir,
+  typewriterMode,
+  onViewReady,
 }: MarkdownEditorProps) {
   const extensions = useMemo(
     () => [
@@ -31,9 +36,10 @@ export function MarkdownEditor({
       mathDecorations(),
       tableDecorations(),
       mermaidDecorations(),
+      ...(typewriterMode ? [typewriterScroll()] : []),
       EditorView.lineWrapping,
     ],
-    [imageBaseDir]
+    [imageBaseDir, typewriterMode]
   );
 
   return (
@@ -41,6 +47,7 @@ export function MarkdownEditor({
       className="markdown-editor"
       value={value}
       onChange={onChange}
+      onCreateEditor={(view) => onViewReady?.(view)}
       extensions={extensions}
       height="100%"
       autoFocus

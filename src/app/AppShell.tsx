@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 type AppShellProps = {
+  focusMode: boolean;
   tabsBar: ReactNode;
   sidebar: ReactNode;
   statusBar: ReactNode;
@@ -12,6 +13,7 @@ type AppShellProps = {
 };
 
 export function AppShell({
+  focusMode,
   tabsBar,
   sidebar,
   statusBar,
@@ -22,7 +24,7 @@ export function AppShell({
   onSaveAs,
 }: AppShellProps) {
   return (
-    <div className="app-shell">
+    <div className={focusMode ? "app-shell focus-mode" : "app-shell"}>
       <header className="toolbar">
         <button onClick={onNew}>New</button>
         <button onClick={onOpen}>Open…</button>

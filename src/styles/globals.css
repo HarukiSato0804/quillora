@@ -181,6 +181,21 @@ body {
   color: #15803d;
 }
 
+.focus-mode .toolbar,
+.focus-mode .tabs-bar,
+.focus-mode .sidebar,
+.focus-mode .status-bar {
+  opacity: 0.35;
+  transition: opacity 0.2s ease;
+}
+
+.focus-mode .toolbar:hover,
+.focus-mode .tabs-bar:hover,
+.focus-mode .sidebar:hover,
+.focus-mode .status-bar:hover {
+  opacity: 1;
+}
+
 .drop-overlay {
   position: fixed;
   inset: 0;
