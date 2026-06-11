@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { open, save, ask } from "@tauri-apps/plugin-dialog";
+import { open, save, ask, message } from "@tauri-apps/plugin-dialog";
 
 const markdownFilters = [
   {
@@ -8,13 +8,43 @@ const markdownFilters = [
   },
 ];
 
-export type OpenedDocument = {
+export type MarkdownFilePayload = {
+  requestedPath: string;
   path: string;
   contents: string;
+  mtimeMs: number | null;
 };
 
-export async function readMarkdownPath(path: string): Promise<string> {
-  return invoke<string>("read_markdown_file", { path });
+export type FileReadErrorPayload = {
+  path: string;
+  message: string;
+};
+
+export type ReadMarkdownFilesResult = {
+  files: MarkdownFilePayload[];
+  errors: FileReadErrorPayload[];
+};
+
+export async function pickMarkdownPaths(): Promise<string[]> {
+  const selected = await open({
+    multiple: true,
+    directory: false,
+    filters: markdownFilters,
+  });
+  if (selected === null) {
+    return [];
+  }
+  return Array.isArray(selected) ? selected : [selected];
+}
+
+export async function readMarkdownFiles(
+  paths: string[]
+): Promise<ReadMarkdownFilesResult> {
+  return invoke<ReadMarkdownFilesResult>("read_markdown_files", { paths });
+}
+
+export async function showOpenProblems(problems: string[]): Promise<void> {
+  await message(problems.join("\n"), { title: "Markflow", kind: "warning" });
 }
 
 export async function takePendingOpenPath(): Promise<string | null> {
@@ -27,27 +57,6 @@ export async function getRecentFiles(): Promise<string[]> {
 
 export async function recordRecentFile(path: string): Promise<string[]> {
   return invoke<string[]>("record_recent_file", { path });
-}
-
-export async function openMarkdownDocument(): Promise<OpenedDocument | null> {
-  const selected = await open({
-    multiple: false,
-    directory: false,
-    filters: markdownFilters,
-  });
-
-  if (typeof selected !== "string") {
-    return null;
-  }
-
-  const contents = await invoke<string>("read_markdown_file", {
-    path: selected,
-  });
-
-  return {
-    path: selected,
-    contents,
-  };
 }
 
 export async function saveMarkdownDocument(

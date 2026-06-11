@@ -58,7 +58,37 @@ pub fn record_recent_file(
 
 #[cfg(test)]
 mod tests {
-    use super::push_recent;
+    use super::{push_recent, read_markdown_files};
+
+    #[test]
+    fn read_markdown_files_reports_unsupported_extensions() {
+        let result = read_markdown_files(vec!["/tmp/image.png".into()]).unwrap();
+        assert!(result.files.is_empty());
+        assert_eq!(result.errors.len(), 1);
+        assert_eq!(result.errors[0].path, "/tmp/image.png");
+    }
+
+    #[test]
+    fn read_markdown_files_reads_existing_files_and_reports_missing_ones() {
+        let dir = std::env::temp_dir().join("markflow-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("read-files-test.md");
+        std::fs::write(&file, "# hello").unwrap();
+
+        let missing = dir.join("missing.md");
+        let result = read_markdown_files(vec![
+            file.to_string_lossy().into_owned(),
+            missing.to_string_lossy().into_owned(),
+        ])
+        .unwrap();
+
+        assert_eq!(result.files.len(), 1);
+        assert_eq!(result.files[0].contents, "# hello");
+        assert!(result.files[0].mtime_ms.is_some());
+        assert_eq!(result.errors.len(), 1);
+
+        std::fs::remove_file(&file).ok();
+    }
 
     #[test]
     fn push_recent_prepends_new_paths() {
@@ -93,6 +123,71 @@ fn is_allowed_markdown_path(path: &Path) -> bool {
             matches!(ext.as_str(), "md" | "markdown" | "txt")
         })
         .unwrap_or(false)
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarkdownFile {
+    pub requested_path: String,
+    pub path: String,
+    pub contents: String,
+    pub mtime_ms: Option<f64>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileReadError {
+    pub path: String,
+    pub message: String,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadMarkdownFilesResult {
+    pub files: Vec<MarkdownFile>,
+    pub errors: Vec<FileReadError>,
+}
+
+fn file_mtime_ms(path: &Path) -> Option<f64> {
+    fs::metadata(path)
+        .ok()?
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|duration| duration.as_millis() as f64)
+}
+
+#[tauri::command]
+pub fn read_markdown_files(paths: Vec<String>) -> Result<ReadMarkdownFilesResult, String> {
+    let mut files = Vec::new();
+    let mut errors = Vec::new();
+
+    for requested in paths {
+        let path = PathBuf::from(&requested);
+        if !is_allowed_markdown_path(&path) {
+            errors.push(FileReadError {
+                path: requested,
+                message: "Only .md, .markdown, and .txt files are supported.".to_string(),
+            });
+            continue;
+        }
+        let canonical = fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+        match fs::read_to_string(&canonical) {
+            Ok(contents) => files.push(MarkdownFile {
+                requested_path: requested,
+                path: canonical.to_string_lossy().into_owned(),
+                contents,
+                mtime_ms: file_mtime_ms(&canonical),
+            }),
+            Err(err) => errors.push(FileReadError {
+                path: requested,
+                message: err.to_string(),
+            }),
+        }
+    }
+
+    Ok(ReadMarkdownFilesResult { files, errors })
 }
 
 #[tauri::command]

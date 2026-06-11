@@ -14,12 +14,14 @@ import {
   activeDocument,
   addDocuments,
   createWorkspace,
+  findDocumentByCanonicalPath,
   isDirty,
   markDocumentSaved,
   newUntitledDocument,
   updateDocumentText,
   windowTitle,
   type DocumentId,
+  type NewDocumentInput,
   type WorkspaceState,
 } from "../editor/store/workspaceStore";
 import {
@@ -30,13 +32,16 @@ import {
 import {
   confirmDiscardChanges,
   getRecentFiles,
-  openMarkdownDocument,
-  readMarkdownPath,
+  pickMarkdownPaths,
+  readMarkdownFiles,
   recordRecentFile,
   saveMarkdownDocument,
   saveMarkdownDocumentAs,
+  showOpenProblems,
   takePendingOpenPath,
+  type ReadMarkdownFilesResult,
 } from "../editor/tauri/fileApi";
+import { planOpenPaths } from "../editor/files/openPipeline";
 
 export function App() {
   const [workspace, setWorkspace] = useState<WorkspaceState>(() =>
@@ -81,15 +86,75 @@ export function App() {
     setWorkspace((ws) => newUntitledDocument(ws));
   }, []);
 
-  const openDocument = useCallback(async () => {
-    const opened = await openMarkdownDocument();
-    if (opened) {
-      setWorkspace((ws) =>
-        addDocuments(ws, [{ path: opened.path, text: opened.contents }])
+  // The single pipeline behind Open dialog, Open Recent, Finder open, and
+  // (later) drag-and-drop: classify paths, read new ones in one batch,
+  // activate the last relevant document, and surface per-file problems.
+  const openPaths = useCallback(
+    async (paths: string[]) => {
+      const plan = planOpenPaths(workspaceRef.current, paths);
+      let result: ReadMarkdownFilesResult = { files: [], errors: [] };
+      if (plan.toRead.length > 0) {
+        result = await readMarkdownFiles(plan.toRead);
+      }
+
+      const fileByRequested = new Map(
+        result.files.map((file) => [file.requestedPath, file])
       );
-      void noteRecent(opened.path);
+      let lastRelevant:
+        | { kind: "path"; path: string }
+        | { kind: "id"; id: string }
+        | null = null;
+      const inputs: NewDocumentInput[] = [];
+      for (const entry of plan.entries) {
+        if (entry.kind === "read") {
+          const file = fileByRequested.get(entry.path);
+          if (file) {
+            inputs.push({
+              path: file.path,
+              text: file.contents,
+              fileMtimeMs: file.mtimeMs,
+            });
+            lastRelevant = { kind: "path", path: file.path };
+          }
+        } else if (entry.kind === "already-open") {
+          lastRelevant = { kind: "id", id: entry.id };
+        }
+      }
+
+      setWorkspace((ws) => {
+        let next = inputs.length > 0 ? addDocuments(ws, inputs) : ws;
+        if (lastRelevant?.kind === "id") {
+          next = activateDocument(next, lastRelevant.id);
+        } else if (lastRelevant?.kind === "path") {
+          const doc = findDocumentByCanonicalPath(next, lastRelevant.path);
+          if (doc) {
+            next = activateDocument(next, doc.id);
+          }
+        }
+        return next;
+      });
+
+      for (const file of result.files) {
+        void noteRecent(file.path);
+      }
+
+      const problems = [
+        ...plan.unsupported.map((path) => `${path}: unsupported file type`),
+        ...result.errors.map((error) => `${error.path}: ${error.message}`),
+      ];
+      if (problems.length > 0) {
+        await showOpenProblems(problems).catch(() => {});
+      }
+    },
+    [noteRecent]
+  );
+
+  const openDocument = useCallback(async () => {
+    const paths = await pickMarkdownPaths();
+    if (paths.length > 0) {
+      await openPaths(paths);
     }
-  }, [noteRecent]);
+  }, [openPaths]);
 
   const saveDocumentAs = useCallback(async () => {
     const doc = activeDocument(workspaceRef.current);
@@ -118,11 +183,9 @@ export function App() {
 
   const openPath = useCallback(
     async (path: string) => {
-      const contents = await readMarkdownPath(path);
-      setWorkspace((ws) => addDocuments(ws, [{ path, text: contents }]));
-      void noteRecent(path);
+      await openPaths([path]);
     },
-    [noteRecent]
+    [openPaths]
   );
 
   // All close paths (tab close button, middle click, Cmd+W) go through the
