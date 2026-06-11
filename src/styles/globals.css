@@ -46,6 +46,67 @@ body {
   background: #eef0f3;
 }
 
+.tabs-bar {
+  display: flex;
+  overflow-x: auto;
+  border-bottom: 1px solid #e2e4e8;
+  background: #eef0f3;
+  min-height: 32px;
+  scrollbar-width: thin;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 6px 14px;
+  border-right: 1px solid #e2e4e8;
+  font-size: 12.5px;
+  color: #57606a;
+  white-space: nowrap;
+  cursor: default;
+  max-width: 220px;
+  flex-shrink: 0;
+}
+
+.tab-active {
+  background: #ffffff;
+  color: #1f2328;
+}
+
+.tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tab-dirty {
+  color: #b45309;
+  font-size: 9px;
+}
+
+.tab-close {
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 4px;
+  border-radius: 4px;
+  color: #6b7280;
+  cursor: pointer;
+  visibility: hidden;
+}
+
+.tab:hover .tab-close,
+.tab-active .tab-close {
+  visibility: visible;
+}
+
+.tab-close:hover {
+  background: #d0d4da;
+  color: #1f2328;
+}
+
 .app-body {
   display: flex;
   flex: 1;

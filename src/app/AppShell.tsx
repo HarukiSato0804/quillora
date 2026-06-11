@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 type AppShellProps = {
+  tabsBar: ReactNode;
   sidebar: ReactNode;
   statusBar: ReactNode;
   children: ReactNode;
@@ -11,6 +12,7 @@ type AppShellProps = {
 };
 
 export function AppShell({
+  tabsBar,
   sidebar,
   statusBar,
   children,
@@ -27,6 +29,7 @@ export function AppShell({
         <button onClick={onSave}>Save</button>
         <button onClick={onSaveAs}>Save As…</button>
       </header>
+      {tabsBar}
       <div className="app-body">
         {sidebar}
         <main className="editor-pane">{children}</main>
