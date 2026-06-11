@@ -5,41 +5,54 @@ import {
   type Extension,
 } from "@codemirror/state";
 import { Decoration, EditorView, type DecorationSet } from "@codemirror/view";
-import { parseHeadings } from "../parser/parseHeadings";
+import { detectHeadingMarker, parseHeadings } from "../parser/parseHeadings";
 
 const headingLineDecorations = [1, 2, 3, 4, 5, 6].map((level) =>
   Decoration.line({ class: `cm-md-heading cm-md-heading-${level}` })
 );
 
+const hiddenMarker = Decoration.replace({});
+
 const mutedMarker = Decoration.mark({
   class: "cm-md-heading-marker cm-md-marker-muted",
 });
-const visibleMarker = Decoration.mark({ class: "cm-md-heading-marker" });
 
-const OPENING_MARKER = /^( {0,3})#{1,6}/;
 const CLOSING_MARKER = /[ \t]+#+[ \t]*$/;
+
+function selectionTouchesLine(
+  state: EditorState,
+  lineFrom: number,
+  lineTo: number
+): boolean {
+  return state.selection.ranges.some(
+    (range) => range.from <= lineTo && range.to >= lineFrom
+  );
+}
 
 export function buildHeadingDecorations(state: EditorState): DecorationSet {
   const headings = parseHeadings(state.doc.toString());
-  const cursorLine = state.doc.lineAt(state.selection.main.head).number;
   const builder = new RangeSetBuilder<Decoration>();
 
   for (const heading of headings) {
     const line = state.doc.line(heading.line);
     builder.add(line.from, line.from, headingLineDecorations[heading.level - 1]);
 
-    const marker = line.number === cursorLine ? visibleMarker : mutedMarker;
+    // A line is active when the cursor is on it or the selection overlaps
+    // it. IME composition always happens at the cursor, so the composing
+    // line is active by the same rule.
+    if (selectionTouchesLine(state, line.from, line.to)) {
+      continue;
+    }
 
-    const opening = line.text.match(OPENING_MARKER);
-    if (opening) {
-      const from = line.from + opening[1].length;
-      builder.add(from, from + heading.level, marker);
+    const marker = detectHeadingMarker(line.text);
+    if (marker) {
+      builder.add(line.from, line.from + marker.markerLength, hiddenMarker);
     }
 
     const closing = line.text.match(CLOSING_MARKER);
     if (closing && closing.index !== undefined) {
       const from = line.from + closing.index;
-      builder.add(from, from + closing[0].length, marker);
+      builder.add(from, from + closing[0].length, mutedMarker);
     }
   }
 

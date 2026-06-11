@@ -1,5 +1,39 @@
 import { describe, expect, it } from "vitest";
-import { parseHeadings } from "./parseHeadings";
+import { detectHeadingMarker, parseHeadings } from "./parseHeadings";
+
+describe("detectHeadingMarker", () => {
+  it("detects levels 1 through 6 with marker length including whitespace", () => {
+    expect(detectHeadingMarker("# a")).toEqual({ level: 1, markerLength: 2 });
+    expect(detectHeadingMarker("###### a")).toEqual({
+      level: 6,
+      markerLength: 7,
+    });
+  });
+
+  it("includes leading indent and multiple separator spaces", () => {
+    expect(detectHeadingMarker("  ##  a")).toEqual({
+      level: 2,
+      markerLength: 6,
+    });
+  });
+
+  it("accepts a tab separator", () => {
+    expect(detectHeadingMarker("#\ta")).toEqual({ level: 1, markerLength: 2 });
+  });
+
+  it("rejects 7 or more hashes", () => {
+    expect(detectHeadingMarker("####### a")).toBeNull();
+  });
+
+  it("rejects markers without following whitespace", () => {
+    expect(detectHeadingMarker("#hash")).toBeNull();
+  });
+
+  it("rejects headings without text", () => {
+    expect(detectHeadingMarker("## ")).toBeNull();
+    expect(detectHeadingMarker("##")).toBeNull();
+  });
+});
 
 describe("parseHeadings", () => {
   it("returns an empty list for empty text", () => {
