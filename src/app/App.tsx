@@ -9,13 +9,17 @@ import { StatusBar } from "../editor/ui/StatusBar";
 import { parseHeadings } from "../editor/parser/parseHeadings";
 import { dirname } from "../editor/parser/parseImages";
 import {
-  createUntitledDocument,
+  activeDocument,
+  addDocuments,
+  createWorkspace,
+  isDirty,
+  markDocumentSaved,
+  newUntitledDocument,
+  removeDocuments,
+  updateDocumentText,
   windowTitle,
-  withOpenedFile,
-  withSavedFile,
-  withText,
-  type DocumentState,
-} from "../editor/store/documentStore";
+  type WorkspaceState,
+} from "../editor/store/workspaceStore";
 import {
   confirmDiscardChanges,
   getRecentFiles,
@@ -28,11 +32,14 @@ import {
 } from "../editor/tauri/fileApi";
 
 export function App() {
-  const [document, setDocument] = useState<DocumentState>(
-    createUntitledDocument
+  const [workspace, setWorkspace] = useState<WorkspaceState>(() =>
+    newUntitledDocument(createWorkspace())
   );
-  const documentRef = useRef(document);
-  documentRef.current = document;
+  const workspaceRef = useRef(workspace);
+  workspaceRef.current = workspace;
+
+  const active = activeDocument(workspace);
+  const activeText = active?.text ?? "";
 
   const [recentFiles, setRecentFiles] = useState<string[]>([]);
 
@@ -44,65 +51,102 @@ export function App() {
     }
   }, []);
 
-  const headings = useMemo(() => parseHeadings(document.text), [document.text]);
+  const headings = useMemo(() => parseHeadings(activeText), [activeText]);
 
+  const title = windowTitle(active);
   useEffect(() => {
     getCurrentWindow()
-      .setTitle(windowTitle(document))
+      .setTitle(title)
       .catch(() => {
         // Outside Tauri (e.g. plain vite dev) there is no native window.
       });
-  }, [document.dirty, document.title]);
+  }, [title]);
+
+  const activeIsDirty = useCallback(() => {
+    const doc = activeDocument(workspaceRef.current);
+    return doc !== null && isDirty(doc);
+  }, []);
 
   const handleChange = useCallback((text: string) => {
-    setDocument((current) => withText(current, text));
+    setWorkspace((ws) =>
+      ws.activeDocumentId === null
+        ? ws
+        : updateDocumentText(ws, ws.activeDocumentId, text)
+    );
   }, []);
+
+  // Until tabs land, New/Open keep the single-document UX: the current
+  // document is replaced (after a dirty confirmation) rather than kept
+  // open alongside the new one.
+  const replaceActive = useCallback(
+    (transform: (ws: WorkspaceState) => WorkspaceState) => {
+      setWorkspace((ws) =>
+        transform(
+          ws.activeDocumentId === null
+            ? ws
+            : removeDocuments(ws, [ws.activeDocumentId])
+        )
+      );
+    },
+    []
+  );
 
   const newDocument = useCallback(async () => {
-    if (documentRef.current.dirty && !(await confirmDiscardChanges())) {
+    if (activeIsDirty() && !(await confirmDiscardChanges())) {
       return;
     }
-    setDocument(createUntitledDocument());
-  }, []);
+    replaceActive((ws) => newUntitledDocument(ws));
+  }, [activeIsDirty, replaceActive]);
 
   const openDocument = useCallback(async () => {
-    if (documentRef.current.dirty && !(await confirmDiscardChanges())) {
+    if (activeIsDirty() && !(await confirmDiscardChanges())) {
       return;
     }
     const opened = await openMarkdownDocument();
     if (opened) {
-      setDocument(withOpenedFile(opened.path, opened.contents));
+      replaceActive((ws) =>
+        addDocuments(ws, [{ path: opened.path, text: opened.contents }])
+      );
       void noteRecent(opened.path);
     }
-  }, [noteRecent]);
+  }, [activeIsDirty, replaceActive, noteRecent]);
 
   const saveDocumentAs = useCallback(async () => {
-    const current = documentRef.current;
-    const path = await saveMarkdownDocumentAs(current.text);
+    const doc = activeDocument(workspaceRef.current);
+    if (!doc) {
+      return;
+    }
+    const path = await saveMarkdownDocumentAs(doc.text);
     if (path) {
-      setDocument(withSavedFile(current, path));
+      setWorkspace((ws) => markDocumentSaved(ws, doc.id, path, doc.text));
       void noteRecent(path);
     }
   }, [noteRecent]);
 
   const saveDocument = useCallback(async () => {
-    const current = documentRef.current;
-    if (current.path === null) {
+    const doc = activeDocument(workspaceRef.current);
+    if (!doc) {
+      return;
+    }
+    if (doc.path === null) {
       await saveDocumentAs();
       return;
     }
-    await saveMarkdownDocument(current.path, current.text);
-    setDocument(withSavedFile(current, current.path));
+    await saveMarkdownDocument(doc.path, doc.text);
+    setWorkspace((ws) => markDocumentSaved(ws, doc.id, doc.path!, doc.text));
   }, [saveDocumentAs]);
 
-  const openPath = useCallback(async (path: string) => {
-    if (documentRef.current.dirty && !(await confirmDiscardChanges())) {
-      return;
-    }
-    const contents = await readMarkdownPath(path);
-    setDocument(withOpenedFile(path, contents));
-    void noteRecent(path);
-  }, [noteRecent]);
+  const openPath = useCallback(
+    async (path: string) => {
+      if (activeIsDirty() && !(await confirmDiscardChanges())) {
+        return;
+      }
+      const contents = await readMarkdownPath(path);
+      replaceActive((ws) => addDocuments(ws, [{ path, text: contents }]));
+      void noteRecent(path);
+    },
+    [activeIsDirty, replaceActive, noteRecent]
+  );
 
   const quitApp = useCallback(() => {
     // Route quit through the window close so the unsaved-changes
@@ -146,11 +190,12 @@ export function App() {
     recentFiles,
   ]);
 
-  // Confirm before closing the window with unsaved changes.
+  // Confirm before closing the window when any document has unsaved changes.
   useEffect(() => {
     const unlistenPromise = getCurrentWindow().onCloseRequested(
       async (event) => {
-        if (documentRef.current.dirty && !(await confirmDiscardChanges())) {
+        const anyDirty = workspaceRef.current.documents.some(isDirty);
+        if (anyDirty && !(await confirmDiscardChanges())) {
           event.preventDefault();
         }
       }
@@ -204,16 +249,16 @@ export function App() {
   return (
     <AppShell
       sidebar={<Sidebar headings={headings} />}
-      statusBar={<StatusBar document={document} />}
+      statusBar={<StatusBar document={active} />}
       onNew={newDocument}
       onOpen={openDocument}
       onSave={saveDocument}
       onSaveAs={saveDocumentAs}
     >
       <MarkdownEditor
-        value={document.text}
+        value={activeText}
         onChange={handleChange}
-        imageBaseDir={document.path ? dirname(document.path) : null}
+        imageBaseDir={active?.path ? dirname(active.path) : null}
       />
     </AppShell>
   );

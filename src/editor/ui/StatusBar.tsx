@@ -1,22 +1,25 @@
-import type { DocumentState } from "../store/documentStore";
+import { isDirty, type OpenDocument } from "../store/workspaceStore";
 
 type StatusBarProps = {
-  document: DocumentState;
+  document: OpenDocument | null;
 };
 
 export function StatusBar({ document }: StatusBarProps) {
-  const lineCount = document.text === "" ? 0 : document.text.split("\n").length;
+  const text = document?.text ?? "";
+  const path = document?.path ?? "Untitled";
+  const dirty = document !== null && isDirty(document);
+  const lineCount = text === "" ? 0 : text.split("\n").length;
 
   return (
     <footer className="status-bar">
-      <span className="status-path" title={document.path ?? "Untitled"}>
-        {document.path ?? "Untitled"}
+      <span className="status-path" title={path}>
+        {path}
       </span>
       <span className="status-spacer" />
-      <span>{document.text.length} chars</span>
+      <span>{text.length} chars</span>
       <span>{lineCount} lines</span>
-      <span className={document.dirty ? "status-dirty" : "status-saved"}>
-        {document.dirty ? "Unsaved" : "Saved"}
+      <span className={dirty ? "status-dirty" : "status-saved"}>
+        {dirty ? "Unsaved" : "Saved"}
       </span>
     </footer>
   );
