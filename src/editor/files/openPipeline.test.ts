@@ -6,10 +6,12 @@ import {
 } from "../store/workspaceStore";
 
 describe("isSupportedMarkdownPath", () => {
-  it("accepts md, markdown, and txt with any case", () => {
+  it("accepts md, markdown, mdx, and txt with any case", () => {
     expect(isSupportedMarkdownPath("/a/b.md")).toBe(true);
     expect(isSupportedMarkdownPath("/a/B.MD")).toBe(true);
     expect(isSupportedMarkdownPath("/a/b.markdown")).toBe(true);
+    expect(isSupportedMarkdownPath("/a/b.mdx")).toBe(true);
+    expect(isSupportedMarkdownPath("/a/b.MDX")).toBe(true);
     expect(isSupportedMarkdownPath("/a/b.txt")).toBe(true);
   });
 

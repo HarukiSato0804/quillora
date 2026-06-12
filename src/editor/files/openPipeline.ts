@@ -4,7 +4,7 @@ import {
   type WorkspaceState,
 } from "../store/workspaceStore";
 
-export const SUPPORTED_EXTENSIONS = ["md", "markdown", "txt"] as const;
+export const SUPPORTED_EXTENSIONS = ["md", "markdown", "mdx", "txt"] as const;
 
 export function isSupportedMarkdownPath(path: string): boolean {
   const name = path.split("/").pop() ?? path;

@@ -187,7 +187,7 @@ fn is_workspace_markdown_path(path: &Path) -> bool {
         .and_then(|ext| ext.to_str())
         .map(|ext| {
             let ext = ext.to_ascii_lowercase();
-            matches!(ext.as_str(), "md" | "markdown" | "mdx")
+            matches!(ext.as_str(), "md" | "markdown" | "mdx" | "txt")
         })
         .unwrap_or(false)
 }
@@ -393,7 +393,7 @@ fn is_allowed_markdown_path(path: &Path) -> bool {
         .and_then(|ext| ext.to_str())
         .map(|ext| {
             let ext = ext.to_ascii_lowercase();
-            matches!(ext.as_str(), "md" | "markdown" | "txt")
+            matches!(ext.as_str(), "md" | "markdown" | "mdx" | "txt")
         })
         .unwrap_or(false)
 }
