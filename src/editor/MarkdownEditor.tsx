@@ -13,6 +13,7 @@ import { mermaidDecorations } from "./extensions/mermaidDecorations";
 import { typewriterScroll } from "./extensions/typewriterScroll";
 import { codeBlockDecorations } from "./extensions/codeBlockDecorations";
 import { listDecorations } from "./extensions/listDecorations";
+import { taskListDecorations } from "./extensions/taskListDecorations";
 import { horizontalRuleDecorations } from "./extensions/horizontalRuleDecorations";
 import { markdownHighlight } from "./extensions/markdownHighlightStyle";
 
@@ -36,6 +37,7 @@ export function MarkdownEditor({
       markdown({ base: markdownLanguage, codeLanguages: languages }),
       markdownHighlight(),
       codeBlockDecorations(),
+      taskListDecorations(),
       listDecorations(),
       horizontalRuleDecorations(),
       headingDecorations(),

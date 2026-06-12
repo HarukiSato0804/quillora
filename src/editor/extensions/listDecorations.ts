@@ -11,6 +11,7 @@ import {
   type DecorationSet,
 } from "@codemirror/view";
 import { parseListItems } from "../parser/parseListItems";
+import { parseTaskListItems } from "../parser/parseTaskListItems";
 
 class BulletWidget extends WidgetType {
   toDOM(): HTMLElement {
@@ -40,8 +41,13 @@ function selectionTouchesLine(
 
 export function buildListDecorations(state: EditorState): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
+  const doc = state.doc.toString();
 
-  for (const item of parseListItems(state.doc.toString())) {
+  // Task list lines are handled by taskListDecorations — skip them here
+  const taskFroms = new Set(parseTaskListItems(doc).map((t) => t.from));
+
+  for (const item of parseListItems(doc)) {
+    if (taskFroms.has(item.from)) continue;
     const line = state.doc.lineAt(item.from);
     builder.add(line.from, line.from, listLine);
     if (!selectionTouchesLine(state, line.from, line.to)) {
