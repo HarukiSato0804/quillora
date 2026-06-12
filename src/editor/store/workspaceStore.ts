@@ -387,7 +387,14 @@ export function activateDocumentInPane(
   }
   const withActivePane = activatePane(state, paneId);
   return {
-    ...updatePane(withActivePane, paneId, (pane) => withDocumentInPane(pane, id)),
+    ...updatePane(withActivePane, paneId, (pane) =>
+      // If the document is already in the pane, only update activeDocumentId
+      // without reordering the tab list. withDocumentInPane is only for adding
+      // a document that is not yet present in the pane.
+      pane.documentIds.includes(id)
+        ? { ...pane, activeDocumentId: id }
+        : withDocumentInPane(pane, id)
+    ),
     documents: withActivePane.documents.map((doc) =>
       doc.id === id ? { ...doc, lastActivatedAt: now } : doc
     ),

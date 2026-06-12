@@ -114,6 +114,20 @@ describe("workspaceStore", () => {
     expect(activateDocument(ws, "missing")).toBe(ws);
   });
 
+  it("activateDocument does not reorder tabs when activating an existing tab", () => {
+    let ws = addDocuments(createWorkspace(), [
+      { path: "/a.md", text: "A", id: "a" },
+      { path: "/b.md", text: "B", id: "b" },
+      { path: "/c.md", text: "C", id: "c" },
+    ]);
+    ws = activateDocument(ws, "b");
+    expect(ws.panes[0].documentIds).toEqual(["a", "b", "c"]);
+    expect(activeDocumentId(ws)).toBe("b");
+    ws = activateDocument(ws, "a");
+    expect(ws.panes[0].documentIds).toEqual(["a", "b", "c"]);
+    expect(activeDocumentId(ws)).toBe("a");
+  });
+
   it("updates the active document text and derives dirty state", () => {
     let ws = withUntitled();
     ws = updateDocumentText(ws, "u1", "hello");

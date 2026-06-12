@@ -119,6 +119,7 @@ export function EditorPaneView({
       </div>
       {activeDocument ? (
         <MarkdownEditor
+          key={`${pane.id}:${activeDocument.id}`}
           value={activeDocument.text}
           onChange={(text) => onChangeDocument(activeDocument.id, text)}
           imageBaseDir={activeDocument.path ? dirname(activeDocument.path) : null}
