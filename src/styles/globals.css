@@ -1,3 +1,18 @@
+:root {
+  --q-bg: #fbfbfd;
+  --q-surface: rgba(255, 255, 255, 0.82);
+  --q-surface-elevated: rgba(255, 255, 255, 0.95);
+  --q-border: rgba(16, 24, 40, 0.10);
+  --q-text: #1d1d1f;
+  --q-muted: #6e7681;
+  --q-accent: #4f7cff;
+  --q-accent-strong: #315fdc;
+  --q-accent-soft: rgba(79, 124, 255, 0.12);
+  --q-success: #2f9e6d;
+  --q-warning: #c77700;
+  --q-danger: #d64545;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -30,8 +45,18 @@ body {
   align-items: center;
   gap: 6px;
   padding: 7px 10px;
-  border-bottom: 1px solid #d8dce2;
-  background: #f7f7f8;
+  border-bottom: 1px solid var(--q-border);
+  background: var(--q-surface);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.toolbar-sep {
+  display: inline-block;
+  width: 1px;
+  height: 18px;
+  background: var(--q-border);
+  margin: 0 2px;
 }
 
 .toolbar button {
@@ -40,30 +65,69 @@ body {
   line-height: 1.3;
   min-height: 26px;
   padding: 3px 10px;
-  border: 1px solid rgba(31, 35, 40, 0.14);
-  border-radius: 7px;
-  color: #1f2328;
-  background: linear-gradient(#ffffff, #f5f6f8);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.75),
-    0 1px 1px rgba(31, 35, 40, 0.05);
+  border: 1px solid var(--q-border);
+  border-radius: 8px;
+  color: var(--q-text);
+  background: var(--q-surface-elevated);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
   cursor: pointer;
+  transition: background 0.12s, box-shadow 0.12s;
 }
 
 .toolbar button:hover {
-  border-color: rgba(31, 35, 40, 0.2);
-  background: linear-gradient(#fbfbfc, #edeff2);
+  background: rgba(255, 255, 255, 1);
+  box-shadow: 0 2px 4px rgba(16, 24, 40, 0.08);
 }
 
 .toolbar button:active {
-  background: #e7e9ed;
-  box-shadow: inset 0 1px 2px rgba(31, 35, 40, 0.12);
+  background: rgba(240, 242, 246, 1);
+  box-shadow: inset 0 1px 2px rgba(16, 24, 40, 0.10);
   transform: translateY(1px);
 }
 
 .toolbar button:focus-visible {
-  outline: 2px solid rgba(9, 105, 218, 0.35);
+  outline: 2px solid var(--q-accent-soft);
   outline-offset: 2px;
+}
+
+.toolbar button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Primary: accent fill (Save, Open Folder) */
+.toolbar .btn-primary {
+  background: var(--q-accent);
+  color: #fff;
+  border-color: var(--q-accent-strong);
+  box-shadow: 0 1px 3px rgba(79, 124, 255, 0.35);
+}
+.toolbar .btn-primary:hover {
+  background: var(--q-accent-strong);
+  box-shadow: 0 2px 6px rgba(79, 124, 255, 0.4);
+}
+.toolbar .btn-primary:active {
+  background: #2a54c7;
+}
+
+/* Accent: soft tint (Split buttons) */
+.toolbar .btn-accent {
+  background: var(--q-accent-soft);
+  color: var(--q-accent);
+  border-color: rgba(79, 124, 255, 0.28);
+}
+.toolbar .btn-accent:hover {
+  background: rgba(79, 124, 255, 0.18);
+  border-color: var(--q-accent);
+}
+.toolbar .btn-accent:active {
+  background: rgba(79, 124, 255, 0.25);
+}
+.toolbar .btn-accent:disabled {
+  background: transparent;
+  color: var(--q-muted);
+  border-color: var(--q-border);
+  opacity: 0.5;
 }
 
 .tabs-bar {
@@ -141,8 +205,9 @@ body {
 }
 
 .tab-active {
-  background: #ffffff;
-  color: #1f2328;
+  background: var(--q-surface-elevated);
+  color: var(--q-accent);
+  box-shadow: inset 0 -2px 0 var(--q-accent);
 }
 
 .tab-title {
@@ -250,7 +315,7 @@ body {
 }
 
 .editor-pane-view.is-active {
-  box-shadow: inset 0 0 0 1px rgba(9, 105, 218, 0.32);
+  box-shadow: inset 0 0 0 2px var(--q-accent);
 }
 
 .editor-pane-empty {
@@ -369,8 +434,8 @@ body {
 }
 
 .sidebar-tab-active {
-  color: #1f2328;
-  background: #e9edf3;
+  color: var(--q-accent);
+  background: var(--q-accent-soft);
 }
 
 .sidebar-title {

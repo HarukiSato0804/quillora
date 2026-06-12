@@ -196,11 +196,11 @@ describe("workspaceStore", () => {
   });
 
   it("builds the window title from the active document", () => {
-    expect(windowTitle(null)).toBe("Markflow");
+    expect(windowTitle(null)).toBe("Quillora");
     let ws = withUntitled();
-    expect(windowTitle(activeDocument(ws))).toBe("Untitled — Markflow");
+    expect(windowTitle(activeDocument(ws))).toBe("Untitled — Quillora");
     ws = updateDocumentText(ws, "u1", "x");
-    expect(windowTitle(activeDocument(ws))).toBe("• Untitled — Markflow");
+    expect(windowTitle(activeDocument(ws))).toBe("• Untitled — Quillora");
   });
 
   it("splits panes horizontally and vertically with document references", () => {
@@ -253,9 +253,9 @@ describe("workspaceStore", () => {
     expect(activeDocumentId(ws)).toBe("a");
     ws = closeDocumentInPane(ws, secondPane, "b");
     expect(ws.documents.map((doc) => doc.id)).toEqual(["a", "b"]);
-    expect(ws.panes.find((pane) => pane.id === secondPane)!.documentIds).toEqual(
-      []
-    );
+    // Empty panes are auto-removed; secondPane no longer exists
+    expect(ws.panes.find((pane) => pane.id === secondPane)).toBeUndefined();
+    expect(ws.panes).toHaveLength(1);
   });
 
   it("closes a pane and removes documents that have no remaining references", () => {

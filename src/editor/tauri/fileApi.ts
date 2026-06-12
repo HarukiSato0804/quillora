@@ -59,11 +59,11 @@ export async function readMarkdownFiles(
 }
 
 export async function showOpenProblems(problems: string[]): Promise<void> {
-  await message(problems.join("\n"), { title: "Markflow", kind: "warning" });
+  await message(problems.join("\n"), { title: "Quillora", kind: "warning" });
 }
 
 export async function showInfo(text: string): Promise<void> {
-  await message(text, { title: "Markflow", kind: "info" });
+  await message(text, { title: "Quillora", kind: "info" });
 }
 
 export async function revealInFinder(path: string): Promise<void> {
@@ -94,7 +94,7 @@ export async function statFiles(paths: string[]): Promise<FileStatPayload[]> {
 export async function confirmReloadFromDisk(title: string): Promise<boolean> {
   return ask(
     `"${title}" changed on disk and you have unsaved edits.\nReload from disk and discard your edits?`,
-    { title: "Markflow", kind: "warning" }
+    { title: "Quillora", kind: "warning" }
   );
 }
 
@@ -139,7 +139,7 @@ export async function saveMarkdownDocumentAs(
 
 export async function confirmDiscardChanges(): Promise<boolean> {
   return ask("You have unsaved changes. Discard them?", {
-    title: "Markflow",
+    title: "Quillora",
     kind: "warning",
   });
 }

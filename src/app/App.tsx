@@ -45,8 +45,7 @@ import {
   newUntitledDocument,
   reloadDocumentFromDisk,
   setDropActive,
-  splitPaneHorizontal,
-  splitPaneVertical,
+  splitPaneMovingDocument,
   toggleFocusMode,
   toggleOutline,
   toggleSidebar,
@@ -396,6 +395,18 @@ export function App() {
     await refreshWorkspace(rootPath);
   }, [refreshWorkspace]);
 
+  const importFolderAsTabs = useCallback(async () => {
+    const rootPath = await pickWorkspaceRoot();
+    if (!rootPath) return;
+    const files = await scanWorkspace(rootPath);
+    const paths = files.map((f) => f.path);
+    if (paths.length === 0) {
+      await showInfo("No Markdown files found in that folder.").catch(() => {});
+      return;
+    }
+    await openPaths(paths);
+  }, [openPaths]);
+
   const saveDocumentAsFor = useCallback(
     async (id: DocumentId): Promise<boolean> => {
       const doc = workspaceRef.current.documents.find((d) => d.id === id);
@@ -525,15 +536,11 @@ export function App() {
   }, []);
 
   const splitTabRight = useCallback((paneId: PaneId, documentId: DocumentId) => {
-    setWorkspace((ws) =>
-      splitPaneHorizontal(activateDocumentInPane(ws, paneId, documentId), paneId)
-    );
+    setWorkspace((ws) => splitPaneMovingDocument(ws, paneId, documentId, "horizontal"));
   }, []);
 
   const splitTabDown = useCallback((paneId: PaneId, documentId: DocumentId) => {
-    setWorkspace((ws) =>
-      splitPaneVertical(activateDocumentInPane(ws, paneId, documentId), paneId)
-    );
+    setWorkspace((ws) => splitPaneMovingDocument(ws, paneId, documentId, "vertical"));
   }, []);
 
   const splitTabToPaneEdge = useCallback(
@@ -544,10 +551,10 @@ export function App() {
       edge: "left" | "right" | "top" | "bottom"
     ) => {
       setWorkspace((ws) => {
-        const next =
-          edge === "left" || edge === "right"
-            ? splitPaneHorizontal(ws, targetPaneId)
-            : splitPaneVertical(ws, targetPaneId);
+        const direction = edge === "left" || edge === "right" ? "horizontal" : "vertical";
+        const next = splitPaneMovingDocument(ws, targetPaneId,
+          ws.panes.find(p => p.id === targetPaneId)?.activeDocumentId ?? documentId,
+          direction);
         if (next.panes.length === ws.panes.length) {
           return ws;
         }
@@ -647,8 +654,17 @@ export function App() {
           void closeWithIntent({ type: "others", exceptDocumentId: activeId });
         }
       },
-      "view:split-right": () => setWorkspace(splitPaneHorizontal),
-      "view:split-down": () => setWorkspace(splitPaneVertical),
+      "file:import-folder": () => void importFolderAsTabs(),
+      "view:split-right": () => {
+        const ws = workspaceRef.current;
+        const docId = activeDocumentId(ws);
+        if (docId) setWorkspace((s) => splitPaneMovingDocument(s, s.activePaneId, docId, "horizontal"));
+      },
+      "view:split-down": () => {
+        const ws = workspaceRef.current;
+        const docId = activeDocumentId(ws);
+        if (docId) setWorkspace((s) => splitPaneMovingDocument(s, s.activePaneId, docId, "vertical"));
+      },
       revealInFinder: () => {
         const path = activeDocument(workspaceRef.current)?.path;
         if (path) {
@@ -697,6 +713,7 @@ export function App() {
       newDocument,
       createDocumentFromTemplate,
       openDocuments,
+      importFolderAsTabs,
       saveDocument,
       saveDocumentAs,
       saveAllDocuments,
@@ -1093,11 +1110,15 @@ export function App() {
         ) : null
       }
       statusBar={<StatusBar document={active} />}
+      canSplit={active !== null}
       onNewFromTemplate={() => setTemplateDialogOpen(true)}
       onOpen={commandHandlers.openDocuments}
       onOpenFolder={() => void openWorkspaceFolder()}
+      onImportFolder={() => void importFolderAsTabs()}
       onSave={commandHandlers.saveDocument}
       onSaveAs={commandHandlers.saveDocumentAs}
+      onSplitRight={() => commandHandlers["view:split-right"]()}
+      onSplitDown={() => commandHandlers["view:split-down"]()}
     >
       <SplitPaneLayout
         workspace={workspace}

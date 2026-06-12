@@ -141,9 +141,9 @@ export function findDocumentByCanonicalPath(
 
 export function windowTitle(doc: OpenDocument | null): string {
   if (!doc) {
-    return "Markflow";
+    return "Quillora";
   }
-  return `${isDirty(doc) ? "• " : ""}${doc.title} — Markflow`;
+  return `${isDirty(doc) ? "• " : ""}${doc.title} — Quillora`;
 }
 
 function generateDocumentId(): DocumentId {
@@ -594,6 +594,86 @@ export function splitPaneVertical(
   return splitPane(state, "vertical", paneId);
 }
 
+// Splits the pane and MOVES the active document to the new pane (not duplicate).
+export function splitPaneMovingDocument(
+  state: WorkspaceState,
+  paneId: PaneId,
+  documentId: DocumentId,
+  direction: SplitDirection
+): WorkspaceState {
+  const sourcePane = state.panes.find((p) => p.id === paneId);
+  if (!sourcePane || !sourcePane.documentIds.includes(documentId)) {
+    return state;
+  }
+  const newPaneId = generatePaneId();
+  const newPane: EditorPane = {
+    id: newPaneId,
+    documentIds: [documentId],
+    activeDocumentId: documentId,
+  };
+  const remainingIds = sourcePane.documentIds.filter((id) => id !== documentId);
+  const updatedSource: EditorPane = {
+    ...sourcePane,
+    documentIds: remainingIds,
+    activeDocumentId:
+      sourcePane.activeDocumentId === documentId
+        ? fallbackActiveId(remainingIds, sourcePane.documentIds, documentId)
+        : sourcePane.activeDocumentId,
+  };
+  const replacement: LayoutNode = {
+    type: "split",
+    id: generateSplitId(),
+    direction,
+    ratio: 0.5,
+    first: { type: "pane", paneId },
+    second: { type: "pane", paneId: newPaneId },
+  };
+  const next: WorkspaceState = {
+    ...state,
+    panes: [...state.panes.map((p) => (p.id === paneId ? updatedSource : p)), newPane],
+    activePaneId: newPaneId,
+    layout: replacePaneInLayout(state.layout, paneId, replacement),
+  };
+  return normalizeLayout(removeEmptyPanes(next));
+}
+
+// Removes panes with zero documents, except when it's the last pane.
+export function removeEmptyPanes(state: WorkspaceState): WorkspaceState {
+  if (state.panes.length <= 1) {
+    return state;
+  }
+  const emptyPaneIds = new Set(
+    state.panes
+      .filter((p) => p.documentIds.length === 0)
+      .map((p) => p.id)
+  );
+  if (emptyPaneIds.size === 0) {
+    return state;
+  }
+  // Keep at least one pane.
+  const remainingPanes = state.panes.filter((p) => !emptyPaneIds.has(p.id));
+  if (remainingPanes.length === 0) {
+    return state;
+  }
+
+  let layout = state.layout;
+  for (const paneId of emptyPaneIds) {
+    layout = removePaneFromLayout(layout, paneId) ?? {
+      type: "pane" as const,
+      paneId: remainingPanes[0].id,
+    };
+  }
+
+  return normalizeLayout({
+    ...state,
+    panes: remainingPanes,
+    activePaneId: emptyPaneIds.has(state.activePaneId)
+      ? remainingPanes[0].id
+      : state.activePaneId,
+    layout,
+  });
+}
+
 export function moveDocumentToPane(
   state: WorkspaceState,
   documentId: DocumentId,
@@ -639,7 +719,7 @@ export function moveDocumentToPaneAt(
   ) {
     return state;
   }
-  return normalizeLayout({
+  return removeEmptyPanes(normalizeLayout({
     ...state,
     activePaneId: targetPaneId,
     panes: state.panes.map((pane) => {
@@ -659,7 +739,7 @@ export function moveDocumentToPaneAt(
       }
       return pane;
     }),
-  });
+  }));
 }
 
 export function copyDocumentReferenceToPaneAt(
@@ -722,11 +802,11 @@ export function closeDocumentInPane(
     };
   });
   const stillReferenced = referencedDocumentIds(panes);
-  return normalizeLayout({
+  return removeEmptyPanes(normalizeLayout({
     ...state,
     panes,
     documents: state.documents.filter((doc) => stillReferenced.has(doc.id)),
-  });
+  }));
 }
 
 export function closePane(

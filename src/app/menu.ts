@@ -49,21 +49,21 @@ export async function setupAppMenu(
   };
 
   const appSubmenu = await Submenu.new({
-    text: "Markflow",
+    text: "Quillora",
     items: [
       await PredefinedMenuItem.new({
-        item: { About: { name: "Markflow" } },
-        text: "About Markflow",
+        item: { About: { name: "Quillora" } },
+        text: "About Quillora",
       }),
       await separator(),
       await commandItem("openSettings"),
       await separator(),
-      await PredefinedMenuItem.new({ item: "Hide", text: "Hide Markflow" }),
+      await PredefinedMenuItem.new({ item: "Hide", text: "Hide Quillora" }),
       await PredefinedMenuItem.new({ item: "HideOthers" }),
       await PredefinedMenuItem.new({ item: "ShowAll" }),
       await separator(),
       await MenuItem.new({
-        text: "Quit Markflow",
+        text: "Quit Quillora",
         accelerator: "CmdOrCtrl+Q",
         action: extras.onQuit,
       }),
@@ -96,6 +96,9 @@ export async function setupAppMenu(
       await separator(),
       await commandItem("closeActiveDocument"),
       await commandItem("closeOtherDocuments"),
+      await separator(),
+      await separator(),
+      await commandItem("file:import-folder"),
       await separator(),
       await commandItem("revealInFinder"),
       await commandItem("copyFilePath"),

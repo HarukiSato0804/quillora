@@ -14,6 +14,7 @@ export type AppCommandId =
   | "saveAllDocuments"
   | "closeActiveDocument"
   | "closeOtherDocuments"
+  | "file:import-folder"
   | "view:split-right"
   | "view:split-down"
   | "revealInFinder"
@@ -75,6 +76,7 @@ export function createCommands(handlers: CommandHandlers): AppCommand[] {
     command("saveAllDocuments", "Save All", hasAnyDirty),
     command("closeActiveDocument", "Close Tab", hasActiveDocument, "Cmd+W"),
     command("closeOtherDocuments", "Close Other Tabs", hasMultipleDocuments),
+    command("file:import-folder", "Import Folder as Tabs…", always),
     command("view:split-right", "Split Right", hasActiveDocument, "Cmd+\\"),
     command(
       "view:split-down",
