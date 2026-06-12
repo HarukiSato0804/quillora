@@ -3,9 +3,11 @@ import {
   isDirty,
   type WorkspaceState,
 } from "../editor/store/workspaceStore";
+import type { TemplateId } from "../editor/templates/markdownTemplates";
 
 export type AppCommandId =
   | "newDocument"
+  | "file:new-from-template"
   | "openDocuments"
   | "saveDocument"
   | "saveDocumentAs"
@@ -41,7 +43,10 @@ export type AppCommand = {
   run: () => Promise<void> | void;
 };
 
-export type CommandHandlers = Record<AppCommandId, () => Promise<void> | void>;
+export type CommandHandlers = Record<
+  AppCommandId,
+  (templateId?: TemplateId) => Promise<void> | void
+>;
 
 const always = () => true;
 const hasActiveDocument = (ws: WorkspaceState) => activeDocument(ws) !== null;
@@ -63,6 +68,7 @@ export function createCommands(handlers: CommandHandlers): AppCommand[] {
 
   return [
     command("newDocument", "New", always, "Cmd+N"),
+    command("file:new-from-template", "New from Template…", always),
     command("openDocuments", "Open…", always, "Cmd+O"),
     command("saveDocument", "Save", hasActiveDocument, "Cmd+S"),
     command("saveDocumentAs", "Save As…", hasActiveDocument, "Cmd+Shift+S"),

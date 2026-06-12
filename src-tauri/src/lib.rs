@@ -23,7 +23,8 @@ pub fn run() {
             commands::copy_text_to_clipboard,
             commands::save_session,
             commands::load_session,
-            commands::stat_files
+            commands::stat_files,
+            commands::scan_workspace
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

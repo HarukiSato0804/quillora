@@ -1,0 +1,97 @@
+import {
+  groupByKind,
+  type MarkdownFileEntry,
+  type MarkdownFileKind,
+  type WorkspaceIndex,
+} from "../store/workspaceFileStore";
+
+type WorkspaceSidebarProps = {
+  workspaceIndex: WorkspaceIndex;
+  onOpenFile: (path: string) => void;
+  onRefresh: () => void;
+};
+
+const GROUPS: Array<{ kind: MarkdownFileKind; label: string }> = [
+  { kind: "skill", label: "Skills" },
+  { kind: "agent", label: "Agents" },
+  { kind: "prompt", label: "Prompts" },
+  { kind: "design", label: "Design Docs" },
+  { kind: "task", label: "Tasks" },
+  { kind: "runbook", label: "Runbooks" },
+  { kind: "adr", label: "ADRs" },
+  { kind: "changelog", label: "Changelogs" },
+  { kind: "unknown", label: "Other" },
+];
+
+export function WorkspaceSidebar({
+  workspaceIndex,
+  onOpenFile,
+  onRefresh,
+}: WorkspaceSidebarProps) {
+  if (!workspaceIndex) {
+    return (
+      <div className="workspace-sidebar">
+        <div className="workspace-sidebar-actions">
+          <button type="button" onClick={onRefresh}>
+            Refresh
+          </button>
+        </div>
+        <div className="sidebar-empty">Open a folder to scan Markdown files.</div>
+      </div>
+    );
+  }
+
+  const grouped = groupByKind(workspaceIndex.files);
+  const visibleGroups = GROUPS.map((group) => ({
+    ...group,
+    files: grouped[group.kind],
+  })).filter((group) => group.files.length > 0);
+
+  return (
+    <div className="workspace-sidebar">
+      <div className="workspace-root" title={workspaceIndex.rootPath}>
+        {workspaceIndex.rootPath}
+      </div>
+      <div className="workspace-sidebar-actions">
+        <button type="button" onClick={onRefresh}>
+          Refresh
+        </button>
+      </div>
+      {visibleGroups.length === 0 ? (
+        <div className="sidebar-empty">No Markdown files found</div>
+      ) : (
+        visibleGroups.map((group) => (
+          <div className="workspace-group" key={group.kind}>
+            <div className="workspace-group-title">{group.label}</div>
+            {group.files.map((file) => (
+              <WorkspaceFileButton
+                file={file}
+                key={file.path}
+                onOpenFile={onOpenFile}
+              />
+            ))}
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+function WorkspaceFileButton({
+  file,
+  onOpenFile,
+}: {
+  file: MarkdownFileEntry;
+  onOpenFile: (path: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="workspace-file-item"
+      title={file.relativePath}
+      onClick={() => onOpenFile(file.path)}
+    >
+      {file.relativePath}
+    </button>
+  );
+}

@@ -6,8 +6,9 @@ type AppShellProps = {
   sidebar: ReactNode;
   statusBar: ReactNode;
   children: ReactNode;
-  onNew: () => void;
+  onNewFromTemplate: () => void;
   onOpen: () => void;
+  onOpenFolder: () => void;
   onSave: () => void;
   onSaveAs: () => void;
 };
@@ -18,16 +19,18 @@ export function AppShell({
   sidebar,
   statusBar,
   children,
-  onNew,
+  onNewFromTemplate,
   onOpen,
+  onOpenFolder,
   onSave,
   onSaveAs,
 }: AppShellProps) {
   return (
     <div className={focusMode ? "app-shell focus-mode" : "app-shell"}>
       <header className="toolbar">
-        <button onClick={onNew}>New</button>
+        <button onClick={onNewFromTemplate}>New▾</button>
         <button onClick={onOpen}>Open…</button>
+        <button onClick={onOpenFolder}>Open Folder…</button>
         <button onClick={onSave}>Save</button>
         <button onClick={onSaveAs}>Save As…</button>
       </header>

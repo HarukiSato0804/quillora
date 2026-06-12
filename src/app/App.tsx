@@ -13,7 +13,8 @@ import {
   createCommands,
   type CommandHandlers,
 } from "./commands";
-import { Sidebar } from "../editor/ui/Sidebar";
+import { Sidebar, type SidebarTab } from "../editor/ui/Sidebar";
+import { NewFromTemplateDialog } from "../editor/ui/NewFromTemplateDialog";
 import { StatusBar } from "../editor/ui/StatusBar";
 import { SplitPaneLayout } from "../editor/ui/SplitPaneLayout";
 import { parseHeadings } from "../editor/parser/parseHeadings";
@@ -75,12 +76,14 @@ import {
   getRecentFiles,
   loadSession,
   pickMarkdownPaths,
+  pickWorkspaceRoot,
   readMarkdownFiles,
   recordRecentFile,
   revealInFinder,
   saveMarkdownDocument,
   saveMarkdownDocumentAs,
   saveSession,
+  scanWorkspace,
   showInfo,
   showOpenProblems,
   statFiles,
@@ -92,6 +95,11 @@ import {
   extractPathsFromDataTransfer,
   splitDroppedPaths,
 } from "../editor/files/dropClassification";
+import type { WorkspaceIndex } from "../editor/store/workspaceFileStore";
+import {
+  getTemplateById,
+  type TemplateId,
+} from "../editor/templates/markdownTemplates";
 
 export function App() {
   const [workspace, setWorkspace] = useState<WorkspaceState>(() =>
@@ -107,6 +115,10 @@ export function App() {
   const activeText = active?.text ?? "";
 
   const [recentFiles, setRecentFiles] = useState<string[]>([]);
+  const [workspaceRootPath, setWorkspaceRootPath] = useState<string | null>(null);
+  const [workspaceIndex, setWorkspaceIndex] = useState<WorkspaceIndex>(null);
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("outline");
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
 
   const noteRecent = useCallback(async (path: string) => {
     try {
@@ -150,6 +162,35 @@ export function App() {
   const newDocument = useCallback(async () => {
     setWorkspace((ws) => newUntitledDocument(ws));
   }, []);
+
+  const createDocumentFromTemplate = useCallback(
+    async (templateId: TemplateId, saveAs = false) => {
+      const template = getTemplateById(templateId);
+      if (!template) {
+        return;
+      }
+
+      if (saveAs) {
+        const path = await saveMarkdownDocumentAs(
+          template.content,
+          template.defaultFilename
+        );
+        if (!path) {
+          return;
+        }
+        setWorkspace((ws) =>
+          addDocuments(ws, [{ path, text: template.content }])
+        );
+        void noteRecent(path);
+        return;
+      }
+
+      setWorkspace((ws) =>
+        newUntitledDocument(ws, { text: template.content })
+      );
+    },
+    [noteRecent]
+  );
 
   // The single pipeline behind Open dialog, Open Recent, Finder open, and
   // drag-and-drop: classify paths, read new ones in one batch, activate
@@ -220,6 +261,27 @@ export function App() {
       await openPaths(paths);
     }
   }, [openPaths]);
+
+  const refreshWorkspace = useCallback(
+    async (rootPath = workspaceRootPath) => {
+      if (!rootPath) {
+        return;
+      }
+      const files = await scanWorkspace(rootPath);
+      setWorkspaceRootPath(rootPath);
+      setWorkspaceIndex({ rootPath, files, scannedAt: Date.now() });
+    },
+    [workspaceRootPath]
+  );
+
+  const openWorkspaceFolder = useCallback(async () => {
+    const rootPath = await pickWorkspaceRoot();
+    if (!rootPath) {
+      return;
+    }
+    setSidebarTab("workspace");
+    await refreshWorkspace(rootPath);
+  }, [refreshWorkspace]);
 
   const saveDocumentAsFor = useCallback(
     async (id: DocumentId): Promise<boolean> => {
@@ -358,6 +420,8 @@ export function App() {
   const commandHandlers: CommandHandlers = useMemo(
     () => ({
       newDocument: () => void newDocument(),
+      "file:new-from-template": (templateId = "blank") =>
+        void createDocumentFromTemplate(templateId),
       openDocuments: () => void openDocuments(),
       saveDocument: () => void saveDocument(),
       saveDocumentAs: () => void saveDocumentAs(),
@@ -423,6 +487,7 @@ export function App() {
     }),
     [
       newDocument,
+      createDocumentFromTemplate,
       openDocuments,
       saveDocument,
       saveDocumentAs,
@@ -795,13 +860,25 @@ export function App() {
           <Sidebar
             headings={headings}
             outlineVisible={workspace.outlineVisible}
+            workspaceIndex={workspaceIndex}
+            activeTab={sidebarTab}
             onHeadingClick={jumpToHeading}
+            onTabChange={setSidebarTab}
+            onOpenWorkspaceFile={(path) => void openPaths([path])}
+            onRefreshWorkspace={() => {
+              if (workspaceRootPath) {
+                void refreshWorkspace(workspaceRootPath);
+              } else {
+                void openWorkspaceFolder();
+              }
+            }}
           />
         ) : null
       }
       statusBar={<StatusBar document={active} />}
-      onNew={commandHandlers.newDocument}
+      onNewFromTemplate={() => setTemplateDialogOpen(true)}
       onOpen={commandHandlers.openDocuments}
+      onOpenFolder={() => void openWorkspaceFolder()}
       onSave={commandHandlers.saveDocument}
       onSaveAs={commandHandlers.saveDocumentAs}
     >
@@ -849,6 +926,19 @@ export function App() {
           onSaveAndQuit={() => void saveAllAndQuit()}
           onQuitWithoutSaving={quitNow}
           onCancel={() => setQuitDialogOpen(false)}
+        />
+      )}
+      {templateDialogOpen && (
+        <NewFromTemplateDialog
+          onCreate={(templateId) => {
+            setTemplateDialogOpen(false);
+            void createDocumentFromTemplate(templateId);
+          }}
+          onSaveAs={(templateId) => {
+            setTemplateDialogOpen(false);
+            void createDocumentFromTemplate(templateId, true);
+          }}
+          onCancel={() => setTemplateDialogOpen(false)}
         />
       )}
     </AppShell>

@@ -23,10 +23,7 @@ fn push_recent(mut list: Vec<String>, path: String) -> Vec<String> {
 }
 
 fn recent_store_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|err| err.to_string())?;
+    let dir = app.path().app_config_dir().map_err(|err| err.to_string())?;
     fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
     Ok(dir.join("recent.json"))
 }
@@ -45,10 +42,7 @@ pub fn get_recent_files(app: tauri::AppHandle) -> Vec<String> {
 }
 
 #[tauri::command]
-pub fn record_recent_file(
-    app: tauri::AppHandle,
-    path: String,
-) -> Result<Vec<String>, String> {
+pub fn record_recent_file(app: tauri::AppHandle, path: String) -> Result<Vec<String>, String> {
     let store = recent_store_path(&app)?;
     // Canonicalize so the same file reached via different paths dedupes.
     let canonical = fs::canonicalize(&path)
@@ -61,10 +55,7 @@ pub fn record_recent_file(
 }
 
 fn session_store_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|err| err.to_string())?;
+    let dir = app.path().app_config_dir().map_err(|err| err.to_string())?;
     fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
     Ok(dir.join("session.json"))
 }
@@ -98,6 +89,186 @@ pub fn stat_files(paths: Vec<String>) -> Vec<FileStat> {
             FileStat { path, mtime_ms }
         })
         .collect()
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct MarkdownFileEntry {
+    pub path: String,
+    pub name: String,
+    pub kind: String,
+    pub size: u64,
+    pub modified_at: u64,
+    pub relative_path: String,
+}
+
+const EXCLUDED_WORKSPACE_DIRS: &[&str] = &[
+    ".git",
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    ".next",
+    ".turbo",
+    ".venv",
+    "__pycache__",
+];
+
+#[tauri::command]
+pub fn scan_workspace(root: String) -> Vec<MarkdownFileEntry> {
+    let root_path = PathBuf::from(root);
+    let canonical_root = fs::canonicalize(&root_path).unwrap_or(root_path);
+    let mut files = Vec::new();
+    scan_markdown_dir(&canonical_root, &canonical_root, &mut files);
+    files.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+    files
+}
+
+fn scan_markdown_dir(root: &Path, dir: &Path, files: &mut Vec<MarkdownFileEntry>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+
+        if metadata.is_dir() {
+            if should_exclude_workspace_dir(&path) {
+                continue;
+            }
+            scan_markdown_dir(root, &path, files);
+            continue;
+        }
+
+        if !metadata.is_file() || !is_workspace_markdown_path(&path) {
+            continue;
+        }
+
+        let relative_path = path
+            .strip_prefix(root)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default()
+            .to_string();
+        let modified_at = metadata
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis() as u64)
+            .unwrap_or(0);
+
+        files.push(MarkdownFileEntry {
+            path: path.to_string_lossy().into_owned(),
+            name,
+            kind: classify_markdown_file(&path, &relative_path),
+            size: metadata.len(),
+            modified_at,
+            relative_path,
+        });
+    }
+}
+
+fn should_exclude_workspace_dir(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| EXCLUDED_WORKSPACE_DIRS.contains(&name))
+        .unwrap_or(false)
+}
+
+fn is_workspace_markdown_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| {
+            let ext = ext.to_ascii_lowercase();
+            matches!(ext.as_str(), "md" | "markdown" | "mdx")
+        })
+        .unwrap_or(false)
+}
+
+fn classify_markdown_file(path: &Path, relative_path: &str) -> String {
+    if let Some(kind) = frontmatter_type(path) {
+        return kind;
+    }
+
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let relative = relative_path.to_ascii_lowercase();
+    let segments: Vec<&str> = relative.split('/').collect();
+
+    let kind = if file_name == "skill.md" {
+        "skill"
+    } else if file_name == "agent.md" || segments.contains(&"agents") {
+        "agent"
+    } else if file_name == "readme.md" {
+        "readme"
+    } else if matches!(
+        file_name.as_str(),
+        "prompt.md" | "system.md" | "instructions.md"
+    ) {
+        "prompt"
+    } else if matches!(file_name.as_str(), "design.md" | "architecture.md")
+        || relative.starts_with("docs/design/")
+        || relative.contains("/docs/design/")
+    {
+        "design"
+    } else if matches!(file_name.as_str(), "todo.md" | "tasks.md" | "roadmap.md") {
+        "task"
+    } else if file_name == "runbook.md" {
+        "runbook"
+    } else if file_name == "adr.md" || segments.contains(&"adr") {
+        "adr"
+    } else if file_name == "changelog.md" {
+        "changelog"
+    } else {
+        "unknown"
+    };
+    kind.to_string()
+}
+
+fn frontmatter_type(path: &Path) -> Option<String> {
+    let bytes = fs::read(path).ok()?;
+    let prefix = String::from_utf8_lossy(&bytes[..bytes.len().min(200)]);
+    parse_frontmatter_type(&prefix)
+}
+
+fn parse_frontmatter_type(prefix: &str) -> Option<String> {
+    let trimmed = prefix.strip_prefix("---")?;
+    for line in trimmed.lines() {
+        let line = line.trim();
+        if line == "---" {
+            break;
+        }
+        let Some(value) = line.strip_prefix("type:") else {
+            continue;
+        };
+        let normalized = value.trim().trim_matches('"').trim_matches('\'');
+        if matches!(
+            normalized,
+            "skill"
+                | "agent"
+                | "readme"
+                | "prompt"
+                | "design"
+                | "task"
+                | "runbook"
+                | "adr"
+                | "changelog"
+                | "unknown"
+        ) {
+            return Some(normalized.to_string());
+        }
+    }
+    None
 }
 
 #[tauri::command]
@@ -185,10 +356,7 @@ mod tests {
 
     #[test]
     fn push_recent_moves_duplicates_to_front() {
-        let list = push_recent(
-            vec!["/a.md".into(), "/b.md".into()],
-            "/b.md".into(),
-        );
+        let list = push_recent(vec!["/a.md".into(), "/b.md".into()], "/b.md".into());
         assert_eq!(list, vec!["/b.md".to_string(), "/a.md".to_string()]);
     }
 

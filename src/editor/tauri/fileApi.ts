@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open, save, ask, message } from "@tauri-apps/plugin-dialog";
+import type { MarkdownFileEntry } from "../store/workspaceFileStore";
 
 const markdownFilters = [
   {
@@ -35,6 +36,20 @@ export async function pickMarkdownPaths(): Promise<string[]> {
     return [];
   }
   return Array.isArray(selected) ? selected : [selected];
+}
+
+export async function pickWorkspaceRoot(): Promise<string | null> {
+  const selected = await open({
+    multiple: false,
+    directory: true,
+  });
+  return typeof selected === "string" ? selected : null;
+}
+
+export async function scanWorkspace(
+  root: string
+): Promise<MarkdownFileEntry[]> {
+  return invoke<MarkdownFileEntry[]>("scan_workspace", { root });
 }
 
 export async function readMarkdownFiles(
@@ -106,11 +121,12 @@ export async function saveMarkdownDocument(
 }
 
 export async function saveMarkdownDocumentAs(
-  contents: string
+  contents: string,
+  defaultPath = "untitled.md"
 ): Promise<string | null> {
   const selected = await save({
     filters: markdownFilters,
-    defaultPath: "untitled.md",
+    defaultPath,
   });
 
   if (typeof selected !== "string") {
