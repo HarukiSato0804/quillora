@@ -11,6 +11,8 @@ import { mathDecorations } from "./extensions/mathDecorations";
 import { tableDecorations } from "./extensions/tableDecorations";
 import { mermaidDecorations } from "./extensions/mermaidDecorations";
 import { typewriterScroll } from "./extensions/typewriterScroll";
+import { codeBlockDecorations } from "./extensions/codeBlockDecorations";
+import { markdownHighlight } from "./extensions/markdownHighlightStyle";
 
 type MarkdownEditorProps = {
   value: string;
@@ -30,6 +32,8 @@ export function MarkdownEditor({
   const extensions = useMemo(
     () => [
       markdown({ base: markdownLanguage, codeLanguages: languages }),
+      markdownHighlight(),
+      codeBlockDecorations(),
       headingDecorations(),
       inlineDecorations(),
       imageDecorations({ baseDir: imageBaseDir, toAssetUrl: convertFileSrc }),

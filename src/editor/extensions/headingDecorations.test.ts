@@ -86,18 +86,13 @@ describe("buildHeadingDecorations", () => {
     );
   });
 
-  it("still mutes closing hash markers on inactive lines", () => {
+  it("hides closing hash markers on inactive lines too", () => {
     const doc = "## Section ##\n\nbody";
-    const decorations = collect(doc, cursor(doc.length));
-    const hidden = decorations.find((d) => d.replaced);
-    expect(hidden).toMatchObject({ from: 0, to: 3 });
-    const closing = decorations.find((d) =>
-      d.class?.includes("cm-md-marker-muted")
-    );
-    expect(closing).toMatchObject({
-      from: "## Section".length,
-      to: "## Section ##".length,
-    });
+    const hidden = collect(doc, cursor(doc.length)).filter((d) => d.replaced);
+    expect(hidden).toMatchObject([
+      { from: 0, to: 3 },
+      { from: "## Section".length, to: "## Section ##".length },
+    ]);
   });
 
   it("ignores headings inside fenced code blocks", () => {

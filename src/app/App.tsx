@@ -6,6 +6,7 @@ import { openSearchPanel } from "@codemirror/search";
 import type { EditorState, TransactionSpec } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { AppShell } from "./AppShell";
+import { QuitDialog } from "./QuitDialog";
 import { setupAppMenu } from "./menu";
 import {
   commandForKeyEvent,
@@ -195,17 +196,29 @@ export function App() {
     }
   }, [openPaths]);
 
-  const saveDocumentAs = useCallback(async () => {
-    const doc = activeDocument(workspaceRef.current);
-    if (!doc) {
-      return;
-    }
-    const path = await saveMarkdownDocumentAs(doc.text);
-    if (path) {
+  const saveDocumentAsFor = useCallback(
+    async (id: DocumentId): Promise<boolean> => {
+      const doc = workspaceRef.current.documents.find((d) => d.id === id);
+      if (!doc) {
+        return false;
+      }
+      const path = await saveMarkdownDocumentAs(doc.text);
+      if (!path) {
+        return false;
+      }
       setWorkspace((ws) => markDocumentSaved(ws, doc.id, path, doc.text));
       void noteRecent(path);
+      return true;
+    },
+    [noteRecent]
+  );
+
+  const saveDocumentAs = useCallback(async () => {
+    const activeId = workspaceRef.current.activeDocumentId;
+    if (activeId !== null) {
+      await saveDocumentAsFor(activeId);
     }
-  }, [noteRecent]);
+  }, [saveDocumentAsFor]);
 
   const saveDocument = useCallback(async () => {
     const doc = activeDocument(workspaceRef.current);
@@ -220,20 +233,21 @@ export function App() {
     setWorkspace((ws) => markDocumentSaved(ws, doc.id, doc.path!, doc.text));
   }, [saveDocumentAs]);
 
-  const saveAllDocuments = useCallback(async () => {
-    const ws = workspaceRef.current;
-    for (const doc of ws.documents.filter(isDirty)) {
+  // Saves every dirty document; untitled ones go through Save As dialogs
+  // one by one. Returns false as soon as the user cancels a dialog.
+  const saveAllDocuments = useCallback(async (): Promise<boolean> => {
+    for (const doc of workspaceRef.current.documents.filter(isDirty)) {
       if (doc.path !== null) {
         await saveMarkdownDocument(doc.path, doc.text);
         setWorkspace((current) =>
           markDocumentSaved(current, doc.id, doc.path!, doc.text)
         );
-      } else if (doc.id === ws.activeDocumentId) {
-        // Untitled documents need a dialog; only prompt for the active one.
-        await saveDocumentAs();
+      } else if (!(await saveDocumentAsFor(doc.id))) {
+        return false;
       }
     }
-  }, [saveDocumentAs]);
+    return true;
+  }, [saveDocumentAsFor]);
 
   // All close paths (tab close button, middle click, Cmd+W, menu) go
   // through the close flow; the UI never removes documents directly. The
@@ -576,20 +590,38 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [menuSignature, commands, openPath, quitApp]);
 
-  // Confirm before closing the window when any document has unsaved changes.
+  // Window close (red traffic light, Cmd+Q, File > Quit — quitApp routes
+  // them all through window.close()). With unsaved changes the close is
+  // prevented and an in-window Save / Don't Save / Cancel dialog takes
+  // over; a clean workspace closes immediately.
+  const [quitDialogOpen, setQuitDialogOpen] = useState(false);
+
   useEffect(() => {
-    const unlistenPromise = getCurrentWindow().onCloseRequested(
-      async (event) => {
-        const anyDirty = workspaceRef.current.documents.some(isDirty);
-        if (anyDirty && !(await confirmDiscardChanges())) {
-          event.preventDefault();
-        }
+    const unlistenPromise = getCurrentWindow().onCloseRequested((event) => {
+      if (workspaceRef.current.documents.some(isDirty)) {
+        event.preventDefault();
+        setQuitDialogOpen(true);
       }
-    );
+    });
     return () => {
       void unlistenPromise.then((unlisten) => unlisten()).catch(() => {});
     };
   }, []);
+
+  const quitNow = useCallback(() => {
+    void getCurrentWindow()
+      .destroy()
+      .catch(() => {});
+  }, []);
+
+  const saveAllAndQuit = useCallback(async () => {
+    if (await saveAllDocuments()) {
+      quitNow();
+    } else {
+      // The user cancelled one of the Save As dialogs; stay open.
+      setQuitDialogOpen(false);
+    }
+  }, [saveAllDocuments, quitNow]);
 
   // Finder drag-and-drop. Markdown files flow into openPaths (same
   // pipeline as the Open dialog); everything else is reported.
@@ -715,6 +747,14 @@ export function App() {
         <div className="drop-overlay" aria-hidden="true">
           <div className="drop-overlay-text">Drop Markdown files to open</div>
         </div>
+      )}
+      {quitDialogOpen && (
+        <QuitDialog
+          dirtyCount={workspace.documents.filter(isDirty).length}
+          onSaveAndQuit={() => void saveAllAndQuit()}
+          onQuitWithoutSaving={quitNow}
+          onCancel={() => setQuitDialogOpen(false)}
+        />
       )}
     </AppShell>
   );

@@ -201,6 +201,73 @@ body {
   opacity: 1;
 }
 
+.quit-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.quit-dialog {
+  width: 420px;
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+
+.quit-dialog-title {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.quit-dialog-message {
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: #57606a;
+}
+
+.quit-dialog-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.quit-dialog-buttons-spacer {
+  flex: 1;
+}
+
+.quit-dialog button {
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 14px;
+  border: 1px solid #d0d4da;
+  border-radius: 6px;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.quit-dialog button:hover {
+  background: #f3f4f6;
+}
+
+.quit-dialog .quit-dialog-primary {
+  background: #0969da;
+  border-color: #0969da;
+  color: #ffffff;
+}
+
+.quit-dialog .quit-dialog-primary:hover {
+  background: #0a5ec2;
+}
+
+.quit-dialog .quit-dialog-discard {
+  color: #b91c1c;
+}
+
 .drop-overlay {
   position: fixed;
   inset: 0;

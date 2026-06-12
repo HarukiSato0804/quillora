@@ -14,9 +14,9 @@ const contentDecorations: Record<InlineSpanType, Decoration> = {
   link: Decoration.mark({ class: "cm-md-link" }),
 };
 
-const mutedMarker = Decoration.mark({
-  class: "cm-md-inline-marker cm-md-marker-muted",
-});
+// Typora-style: markers disappear entirely while the cursor is outside
+// the span and reappear as plain source when it enters.
+const hiddenMarker = Decoration.replace({});
 const visibleMarker = Decoration.mark({ class: "cm-md-inline-marker" });
 
 const FENCE = /^ {0,3}(```|~~~)/;
@@ -50,7 +50,7 @@ export function buildInlineDecorations(state: EditorState): DecorationSet {
       const spanFrom = line.from + span.from;
       const spanTo = line.from + span.to;
       const cursorInside = cursor >= spanFrom && cursor <= spanTo;
-      const marker = cursorInside ? visibleMarker : mutedMarker;
+      const marker = cursorInside ? visibleMarker : hiddenMarker;
 
       for (const markerRange of span.markers) {
         ranges.push({

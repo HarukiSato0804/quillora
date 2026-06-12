@@ -5,7 +5,7 @@ import { buildInlineDecorations } from "./inlineDecorations";
 type CollectedDecoration = {
   from: number;
   to: number;
-  class: string;
+  class: string | undefined;
 };
 
 function collect(doc: string, cursor = 0): CollectedDecoration[] {
@@ -27,26 +27,22 @@ describe("buildInlineDecorations", () => {
     expect(content).toMatchObject({ from: 2, to: 6 });
   });
 
-  it("mutes markers when the cursor is outside the span", () => {
+  it("hides markers when the cursor is outside the span", () => {
     const decorations = collect("**bold**\n\ncursor here", 12);
-    const markers = decorations.filter((d) =>
-      d.class.includes("cm-md-inline-marker")
-    );
-    expect(markers).toHaveLength(2);
-    expect(markers.every((m) => m.class.includes("cm-md-marker-muted"))).toBe(
-      true
-    );
+    const hidden = decorations.filter((d) => d.class === undefined);
+    expect(hidden).toEqual([
+      { from: 0, to: 2, class: undefined },
+      { from: 6, to: 8, class: undefined },
+    ]);
   });
 
-  it("shows markers when the cursor is inside the span", () => {
+  it("shows markers as plain source when the cursor is inside the span", () => {
     const decorations = collect("**bold**", 4);
+    expect(decorations.some((d) => d.class === undefined)).toBe(false);
     const markers = decorations.filter((d) =>
-      d.class.includes("cm-md-inline-marker")
+      d.class?.includes("cm-md-inline-marker")
     );
     expect(markers).toHaveLength(2);
-    expect(markers.some((m) => m.class.includes("cm-md-marker-muted"))).toBe(
-      false
-    );
   });
 
   it("decorates italic, code, and link content with their own classes", () => {

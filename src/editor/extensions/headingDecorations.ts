@@ -13,10 +13,6 @@ const headingLineDecorations = [1, 2, 3, 4, 5, 6].map((level) =>
 
 const hiddenMarker = Decoration.replace({});
 
-const mutedMarker = Decoration.mark({
-  class: "cm-md-heading-marker cm-md-marker-muted",
-});
-
 const CLOSING_MARKER = /[ \t]+#+[ \t]*$/;
 
 function selectionTouchesLine(
@@ -52,7 +48,7 @@ export function buildHeadingDecorations(state: EditorState): DecorationSet {
     const closing = line.text.match(CLOSING_MARKER);
     if (closing && closing.index !== undefined) {
       const from = line.from + closing.index;
-      builder.add(from, from + closing[0].length, mutedMarker);
+      builder.add(from, from + closing[0].length, hiddenMarker);
     }
   }
 
