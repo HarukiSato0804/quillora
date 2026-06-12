@@ -7,7 +7,9 @@ import {
 
 type WorkspaceSidebarProps = {
   workspaceIndex: WorkspaceIndex;
+  selectedBundlePaths?: Set<string>;
   onOpenFile: (path: string) => void;
+  onToggleBundleFile?: (path: string) => void;
   onRefresh: () => void;
 };
 
@@ -25,7 +27,9 @@ const GROUPS: Array<{ kind: MarkdownFileKind; label: string }> = [
 
 export function WorkspaceSidebar({
   workspaceIndex,
+  selectedBundlePaths,
   onOpenFile,
+  onToggleBundleFile,
   onRefresh,
 }: WorkspaceSidebarProps) {
   if (!workspaceIndex) {
@@ -67,7 +71,9 @@ export function WorkspaceSidebar({
               <WorkspaceFileButton
                 file={file}
                 key={file.path}
+                selected={selectedBundlePaths?.has(file.path) ?? false}
                 onOpenFile={onOpenFile}
+                onToggleBundleFile={onToggleBundleFile}
               />
             ))}
           </div>
@@ -79,19 +85,33 @@ export function WorkspaceSidebar({
 
 function WorkspaceFileButton({
   file,
+  selected,
   onOpenFile,
+  onToggleBundleFile,
 }: {
   file: MarkdownFileEntry;
+  selected: boolean;
   onOpenFile: (path: string) => void;
+  onToggleBundleFile?: (path: string) => void;
 }) {
   return (
-    <button
-      type="button"
-      className="workspace-file-item"
-      title={file.relativePath}
-      onClick={() => onOpenFile(file.path)}
-    >
-      {file.relativePath}
-    </button>
+    <div className="workspace-file-row">
+      {onToggleBundleFile && (
+        <input
+          aria-label={`Select ${file.relativePath} for bundle`}
+          checked={selected}
+          onChange={() => onToggleBundleFile(file.path)}
+          type="checkbox"
+        />
+      )}
+      <button
+        type="button"
+        className="workspace-file-item"
+        title={file.relativePath}
+        onClick={() => onOpenFile(file.path)}
+      >
+        {file.relativePath}
+      </button>
+    </div>
   );
 }

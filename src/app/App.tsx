@@ -96,6 +96,7 @@ import {
   splitDroppedPaths,
 } from "../editor/files/dropClassification";
 import type { WorkspaceIndex } from "../editor/store/workspaceFileStore";
+import { classifyByPath } from "../editor/store/workspaceFileStore";
 import {
   getTemplateById,
   type TemplateId,
@@ -117,6 +118,12 @@ export function App() {
   const [recentFiles, setRecentFiles] = useState<string[]>([]);
   const [workspaceRootPath, setWorkspaceRootPath] = useState<string | null>(null);
   const [workspaceIndex, setWorkspaceIndex] = useState<WorkspaceIndex>(null);
+  const [workspaceFileContents, setWorkspaceFileContents] = useState<
+    Map<string, string>
+  >(() => new Map());
+  const [selectedBundlePaths, setSelectedBundlePaths] = useState<Set<string>>(
+    () => new Set()
+  );
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("outline");
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
 
@@ -129,6 +136,41 @@ export function App() {
   }, []);
 
   const headings = useMemo(() => parseHeadings(activeText), [activeText]);
+  const activeKind = useMemo(() => {
+    if (!active) {
+      return "unknown";
+    }
+    const indexed = workspaceIndex?.files.find((file) => file.path === active.path);
+    return indexed?.kind ?? classifyByPath(active.path ?? active.title, active.text);
+  }, [active, workspaceIndex]);
+
+  const workspaceFiles = useMemo(() => {
+    if (!workspaceIndex) {
+      return [];
+    }
+    const openTextByPath = new Map(
+      workspace.documents
+        .filter((doc) => doc.path !== null)
+        .map((doc) => [doc.path!, doc.text])
+    );
+    return workspaceIndex.files
+      .map((file) => {
+        const content = openTextByPath.get(file.path) ?? workspaceFileContents.get(file.path);
+        return content === undefined
+          ? null
+          : {
+              path: file.path,
+              relativePath: file.relativePath,
+              content,
+            };
+      })
+      .filter(
+        (
+          file
+        ): file is { path: string; relativePath: string; content: string } =>
+          file !== null
+      );
+  }, [workspace.documents, workspaceFileContents, workspaceIndex]);
 
   const jumpToHeading = useCallback((from: number) => {
     const view = viewRef.current;
@@ -138,6 +180,20 @@ export function App() {
     view.dispatch({
       selection: { anchor: from },
       effects: EditorView.scrollIntoView(from, { y: "center" }),
+    });
+    view.focus();
+  }, []);
+
+  const jumpToLine = useCallback((line: number) => {
+    const view = viewRef.current;
+    if (!view) {
+      return;
+    }
+    const safeLine = Math.min(Math.max(line, 1), view.state.doc.lines);
+    const position = view.state.doc.line(safeLine).from;
+    view.dispatch({
+      selection: { anchor: position },
+      effects: EditorView.scrollIntoView(position, { y: "center" }),
     });
     view.focus();
   }, []);
@@ -273,6 +329,58 @@ export function App() {
     },
     [workspaceRootPath]
   );
+
+  useEffect(() => {
+    if (!workspaceIndex) {
+      setWorkspaceFileContents(new Map());
+      setSelectedBundlePaths(new Set());
+      return;
+    }
+
+    let cancelled = false;
+    const paths = workspaceIndex.files.map((file) => file.path);
+    setSelectedBundlePaths(
+      (current) => new Set(paths.filter((path) => current.has(path)))
+    );
+    void readMarkdownFiles(paths)
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        setWorkspaceFileContents(
+          new Map(result.files.map((file) => [file.path, file.contents]))
+        );
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setWorkspaceFileContents(new Map());
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceIndex]);
+
+  const toggleBundleFile = useCallback((path: string) => {
+    setSelectedBundlePaths((current) => {
+      const next = new Set(current);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  }, []);
+
+  const copyBundle = useCallback(async (markdown: string) => {
+    await copyTextToClipboard(markdown);
+  }, []);
+
+  const saveBundle = useCallback(async (markdown: string) => {
+    await saveMarkdownDocumentAs(markdown, "context-bundle.md");
+  }, []);
 
   const openWorkspaceFolder = useCallback(async () => {
     const rootPath = await pickWorkspaceRoot();
@@ -861,10 +969,17 @@ export function App() {
             headings={headings}
             outlineVisible={workspace.outlineVisible}
             workspaceIndex={workspaceIndex}
+            workspaceFiles={workspaceFiles}
+            activeContent={activeText}
+            activeFilePath={active?.path ?? null}
+            activeKind={activeKind}
+            selectedBundlePaths={selectedBundlePaths}
             activeTab={sidebarTab}
             onHeadingClick={jumpToHeading}
+            onLineClick={jumpToLine}
             onTabChange={setSidebarTab}
             onOpenWorkspaceFile={(path) => void openPaths([path])}
+            onToggleBundleFile={toggleBundleFile}
             onRefreshWorkspace={() => {
               if (workspaceRootPath) {
                 void refreshWorkspace(workspaceRootPath);
@@ -872,6 +987,8 @@ export function App() {
                 void openWorkspaceFolder();
               }
             }}
+            onCopyBundle={copyBundle}
+            onSaveBundle={saveBundle}
           />
         ) : null
       }
