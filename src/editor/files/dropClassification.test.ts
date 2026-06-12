@@ -101,7 +101,7 @@ describe("extractPathsFromDataTransfer", () => {
     return {
       types,
       getData: (type: string) => (type === "text/uri-list" ? data : ""),
-    } as DataTransfer;
+    } as unknown as DataTransfer;
   }
 
   it("extracts decoded file paths from text/uri-list", () => {
