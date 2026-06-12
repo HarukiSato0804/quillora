@@ -634,44 +634,12 @@ export function splitPaneMovingDocument(
     activePaneId: newPaneId,
     layout: replacePaneInLayout(state.layout, paneId, replacement),
   };
-  return normalizeLayout(removeEmptyPanes(next));
+  return normalizeLayout(next);
 }
 
-// Removes panes with zero documents, except when it's the last pane.
+// Kept for call-site compatibility; normalizeLayout now handles this internally.
 export function removeEmptyPanes(state: WorkspaceState): WorkspaceState {
-  if (state.panes.length <= 1) {
-    return state;
-  }
-  const emptyPaneIds = new Set(
-    state.panes
-      .filter((p) => p.documentIds.length === 0)
-      .map((p) => p.id)
-  );
-  if (emptyPaneIds.size === 0) {
-    return state;
-  }
-  // Keep at least one pane.
-  const remainingPanes = state.panes.filter((p) => !emptyPaneIds.has(p.id));
-  if (remainingPanes.length === 0) {
-    return state;
-  }
-
-  let layout = state.layout;
-  for (const paneId of emptyPaneIds) {
-    layout = removePaneFromLayout(layout, paneId) ?? {
-      type: "pane" as const,
-      paneId: remainingPanes[0].id,
-    };
-  }
-
-  return normalizeLayout({
-    ...state,
-    panes: remainingPanes,
-    activePaneId: emptyPaneIds.has(state.activePaneId)
-      ? remainingPanes[0].id
-      : state.activePaneId,
-    layout,
-  });
+  return normalizeLayout(state);
 }
 
 export function moveDocumentToPane(
@@ -719,7 +687,7 @@ export function moveDocumentToPaneAt(
   ) {
     return state;
   }
-  return removeEmptyPanes(normalizeLayout({
+  return normalizeLayout({
     ...state,
     activePaneId: targetPaneId,
     panes: state.panes.map((pane) => {
@@ -739,7 +707,7 @@ export function moveDocumentToPaneAt(
       }
       return pane;
     }),
-  }));
+  });
 }
 
 export function copyDocumentReferenceToPaneAt(
@@ -802,11 +770,11 @@ export function closeDocumentInPane(
     };
   });
   const stillReferenced = referencedDocumentIds(panes);
-  return removeEmptyPanes(normalizeLayout({
+  return normalizeLayout({
     ...state,
     panes,
     documents: state.documents.filter((doc) => stillReferenced.has(doc.id)),
-  }));
+  });
 }
 
 export function closePane(
@@ -842,6 +810,8 @@ export function updateSplitRatio(
 
 export function normalizeLayout(state: WorkspaceState): WorkspaceState {
   const documentIdSet = new Set(state.documents.map((doc) => doc.id));
+
+  // Step 1: clean each pane's document list.
   const cleanedPanes = state.panes.map((pane) => {
     const documentIds = uniqueDocumentIds(pane.documentIds).filter((id) =>
       documentIdSet.has(id)
@@ -852,33 +822,45 @@ export function normalizeLayout(state: WorkspaceState): WorkspaceState {
         : documentIds[0] ?? null;
     return { ...pane, documentIds, activeDocumentId: activeId };
   });
-  const panes =
-    cleanedPanes.length > 0
-      ? cleanedPanes
-      : [{ id: ROOT_PANE_ID, documentIds: [], activeDocumentId: null }];
+
+  // Step 2: remove empty panes when there are multiple panes.
+  // A single root pane may legitimately be empty (e.g. fresh workspace).
+  let panes: EditorPane[] =
+    cleanedPanes.length > 1
+      ? cleanedPanes.filter((p) => p.documentIds.length > 0)
+      : cleanedPanes;
+
+  if (panes.length === 0) {
+    panes = [{ id: ROOT_PANE_ID, documentIds: [], activeDocumentId: null }];
+  }
+
   const paneIds = new Set(panes.map((pane) => pane.id));
 
+  // Step 3: collapse layout tree to remove references to deleted panes.
   const normalizeNode = (node: LayoutNode): LayoutNode | null => {
     if (node.type === "pane") {
       return paneIds.has(node.paneId) ? node : null;
     }
     const first = normalizeNode(node.first);
     const second = normalizeNode(node.second);
-    if (!first) {
-      return second;
-    }
-    if (!second) {
-      return first;
-    }
+    if (!first) return second;
+    if (!second) return first;
     return { ...node, ratio: clampRatio(node.ratio), first, second };
   };
+
+  // Step 4: activePaneId must point to a non-empty pane when possible.
+  const activePaneId = (() => {
+    const current = panes.find((p) => p.id === state.activePaneId);
+    if (current && current.documentIds.length > 0) return current.id;
+    // Prefer any pane that has documents.
+    const withDocs = panes.find((p) => p.documentIds.length > 0);
+    return withDocs?.id ?? panes[0].id;
+  })();
 
   return {
     ...state,
     panes,
-    activePaneId: paneIds.has(state.activePaneId)
-      ? state.activePaneId
-      : panes[0].id,
+    activePaneId,
     layout: normalizeNode(state.layout) ?? { type: "pane", paneId: panes[0].id },
   };
 }
