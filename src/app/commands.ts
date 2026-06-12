@@ -12,6 +12,8 @@ export type AppCommandId =
   | "saveAllDocuments"
   | "closeActiveDocument"
   | "closeOtherDocuments"
+  | "view:split-right"
+  | "view:split-down"
   | "revealInFinder"
   | "copyFilePath"
   | "toggleSidebar"
@@ -67,6 +69,13 @@ export function createCommands(handlers: CommandHandlers): AppCommand[] {
     command("saveAllDocuments", "Save All", hasAnyDirty),
     command("closeActiveDocument", "Close Tab", hasActiveDocument, "Cmd+W"),
     command("closeOtherDocuments", "Close Other Tabs", hasMultipleDocuments),
+    command("view:split-right", "Split Right", hasActiveDocument, "Cmd+\\"),
+    command(
+      "view:split-down",
+      "Split Down",
+      hasActiveDocument,
+      "Cmd+Shift+\\"
+    ),
     command("revealInFinder", "Reveal in Finder", hasSavedPath),
     command("copyFilePath", "Copy File Path", hasSavedPath),
     command("toggleSidebar", "Toggle Sidebar", always),

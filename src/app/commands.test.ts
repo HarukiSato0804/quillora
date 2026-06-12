@@ -111,6 +111,24 @@ describe("commandForKeyEvent", () => {
         key: "S",
       })?.id
     ).toBe("saveDocumentAs");
+    expect(
+      commandForKeyEvent(commands, {
+        metaKey: true,
+        ctrlKey: false,
+        shiftKey: false,
+        altKey: false,
+        key: "\\",
+      })?.id
+    ).toBe("view:split-right");
+    expect(
+      commandForKeyEvent(commands, {
+        metaKey: true,
+        ctrlKey: false,
+        shiftKey: true,
+        altKey: false,
+        key: "\\",
+      })?.id
+    ).toBe("view:split-down");
   });
 
   it("matches option-modified shortcuts", () => {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { applyCloseDecision, planClose } from "./closeFlow";
 import {
   activateDocument,
+  activeDocumentId,
   addDocuments,
   createWorkspace,
   updateDocumentText,
@@ -24,7 +25,7 @@ describe("closeFlow", () => {
 
     const next = applyCloseDecision(ws, plan, "discard");
     expect(next.documents.map((d) => d.id)).toEqual(["a", "b"]);
-    expect(next.activeDocumentId).toBe("b");
+    expect(activeDocumentId(next)).toBe("b");
   });
 
   it("closing the active tab with a following neighbour activates it", () => {
@@ -34,7 +35,7 @@ describe("closeFlow", () => {
       planClose(ws, { type: "single", documentId: "b" }),
       "discard"
     );
-    expect(next.activeDocumentId).toBe("c");
+    expect(activeDocumentId(next)).toBe("c");
   });
 
   it("closes a clean inactive tab without changing the active tab", () => {
@@ -45,7 +46,7 @@ describe("closeFlow", () => {
       "discard"
     );
     expect(next.documents.map((d) => d.id)).toEqual(["b", "c"]);
-    expect(next.activeDocumentId).toBe("c");
+    expect(activeDocumentId(next)).toBe("c");
   });
 
   it("preserves dirty tabs when close is cancelled", () => {
@@ -74,7 +75,7 @@ describe("closeFlow", () => {
 
     const next = applyCloseDecision(ws, plan, "discard");
     expect(next.documents.map((d) => d.id)).toEqual(["b"]);
-    expect(next.activeDocumentId).toBe("b");
+    expect(activeDocumentId(next)).toBe("b");
   });
 
   it("close others with a dirty sibling can be cancelled entirely", () => {
@@ -101,7 +102,7 @@ describe("closeFlow", () => {
       "discard"
     );
     expect(next.documents).toEqual([]);
-    expect(next.activeDocumentId).toBeNull();
+    expect(activeDocumentId(next)).toBeNull();
   });
 
   it("an empty plan is a no-op", () => {

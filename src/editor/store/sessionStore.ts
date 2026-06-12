@@ -1,5 +1,7 @@
 import {
   activateDocument,
+  activeDocument,
+  activeDocumentId,
   addDocuments,
   createWorkspace,
   findDocumentByCanonicalPath,
@@ -29,9 +31,7 @@ export type PersistedWorkspace = {
 // the user saved elsewhere. Untitled documents persist their text since
 // disk has no copy. Pristine empty untitled tabs are not worth restoring.
 export function serializeWorkspace(state: WorkspaceState): PersistedWorkspace {
-  const active = state.documents.find(
-    (doc) => doc.id === state.activeDocumentId
-  );
+  const active = activeDocument(state);
   return {
     version: 1,
     activeDocumentPath: active?.path ?? null,
@@ -85,7 +85,7 @@ export function buildRestoredWorkspace(
         { path: file.path, text: file.text, fileMtimeMs: file.mtimeMs },
       ]);
     }
-    const id = ws.activeDocumentId;
+    const id = activeDocumentId(ws);
     if (id !== null) {
       ws = updateDocumentSelection(ws, id, doc.selection);
       ws = updateDocumentScroll(ws, id, doc.scrollTop);

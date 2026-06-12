@@ -13,12 +13,10 @@ import {
   createCommands,
   type CommandHandlers,
 } from "./commands";
-import { MarkdownEditor } from "../editor/MarkdownEditor";
 import { Sidebar } from "../editor/ui/Sidebar";
 import { StatusBar } from "../editor/ui/StatusBar";
-import { TabsBar } from "../editor/ui/TabsBar";
+import { SplitPaneLayout } from "../editor/ui/SplitPaneLayout";
 import { parseHeadings } from "../editor/parser/parseHeadings";
-import { dirname } from "../editor/parser/parseImages";
 import {
   insertLink as insertLinkSpec,
   toggleInlineMarker,
@@ -28,25 +26,36 @@ import {
 } from "../editor/commands/formatting";
 import {
   activateDocument,
+  activeDocumentId,
+  activateDocumentInPane,
+  activatePane,
   activeDocument,
   addDocuments,
+  closeDocumentInPane,
+  copyDocumentReferenceToPaneAt,
   createWorkspace,
   findDocumentByCanonicalPath,
   applyDiskStates,
   externalChangeState,
   isDirty,
   markDocumentSaved,
+  moveDocumentToPaneAt,
   newUntitledDocument,
   reloadDocumentFromDisk,
   setDropActive,
+  splitPaneHorizontal,
+  splitPaneVertical,
   toggleFocusMode,
   toggleOutline,
   toggleSidebar,
   toggleTypewriterMode,
   updateDocumentText,
+  updateSplitRatio,
   windowTitle,
   type DocumentId,
   type NewDocumentInput,
+  type PaneId,
+  type SplitId,
   type WorkspaceState,
 } from "../editor/store/workspaceStore";
 import {
@@ -92,6 +101,7 @@ export function App() {
   workspaceRef.current = workspace;
 
   const viewRef = useRef<EditorView | null>(null);
+  const editorViewsRef = useRef(new Map<PaneId, EditorView>());
 
   const active = activeDocument(workspace);
   const activeText = active?.text ?? "";
@@ -129,12 +139,12 @@ export function App() {
       });
   }, [title]);
 
-  const handleChange = useCallback((text: string) => {
-    setWorkspace((ws) =>
-      ws.activeDocumentId === null
-        ? ws
-        : updateDocumentText(ws, ws.activeDocumentId, text)
-    );
+  useEffect(() => {
+    viewRef.current = editorViewsRef.current.get(workspace.activePaneId) ?? null;
+  }, [workspace.activePaneId]);
+
+  const handleDocumentChange = useCallback((id: DocumentId, text: string) => {
+    setWorkspace((ws) => updateDocumentText(ws, id, text));
   }, []);
 
   const newDocument = useCallback(async () => {
@@ -229,7 +239,7 @@ export function App() {
   );
 
   const saveDocumentAs = useCallback(async () => {
-    const activeId = workspaceRef.current.activeDocumentId;
+    const activeId = activeDocumentId(workspaceRef.current);
     if (activeId !== null) {
       await saveDocumentAsFor(activeId);
     }
@@ -284,27 +294,37 @@ export function App() {
   }, []);
 
   const closeTab = useCallback(
-    (id: DocumentId) => {
-      void closeWithIntent({ type: "single", documentId: id });
+    (paneId: PaneId, id: DocumentId) => {
+      const referenceCount = workspaceRef.current.panes.filter((pane) =>
+        pane.documentIds.includes(id)
+      ).length;
+      if (referenceCount <= 1) {
+        void closeWithIntent({ type: "single", documentId: id });
+        return;
+      }
+      setWorkspace((ws) => closeDocumentInPane(ws, paneId, id));
     },
     [closeWithIntent]
   );
 
-  const activateTab = useCallback((id: DocumentId) => {
-    setWorkspace((ws) => activateDocument(ws, id));
+  const activateTab = useCallback((paneId: PaneId, id: DocumentId) => {
+    setWorkspace((ws) => activateDocumentInPane(ws, paneId, id));
+  }, []);
+
+  const activateEditorPane = useCallback((paneId: PaneId) => {
+    setWorkspace((ws) => activatePane(ws, paneId));
   }, []);
 
   const switchTabBy = useCallback((offset: number) => {
     setWorkspace((ws) => {
-      if (ws.documents.length < 2 || ws.activeDocumentId === null) {
+      const pane = ws.panes.find((entry) => entry.id === ws.activePaneId);
+      if (!pane || pane.documentIds.length < 2 || pane.activeDocumentId === null) {
         return ws;
       }
-      const index = ws.documents.findIndex(
-        (doc) => doc.id === ws.activeDocumentId
-      );
+      const index = pane.documentIds.indexOf(pane.activeDocumentId);
       const nextIndex =
-        (index + offset + ws.documents.length) % ws.documents.length;
-      return activateDocument(ws, ws.documents[nextIndex].id);
+        (index + offset + pane.documentIds.length) % pane.documentIds.length;
+      return activateDocumentInPane(ws, pane.id, pane.documentIds[nextIndex]);
     });
   }, []);
 
@@ -343,17 +363,20 @@ export function App() {
       saveDocumentAs: () => void saveDocumentAs(),
       saveAllDocuments: () => void saveAllDocuments(),
       closeActiveDocument: () => {
-        const activeId = workspaceRef.current.activeDocumentId;
+        const ws = workspaceRef.current;
+        const activeId = activeDocumentId(ws);
         if (activeId !== null) {
-          closeTab(activeId);
+          closeTab(ws.activePaneId, activeId);
         }
       },
       closeOtherDocuments: () => {
-        const activeId = workspaceRef.current.activeDocumentId;
+        const activeId = activeDocumentId(workspaceRef.current);
         if (activeId !== null) {
           void closeWithIntent({ type: "others", exceptDocumentId: activeId });
         }
       },
+      "view:split-right": () => setWorkspace(splitPaneHorizontal),
+      "view:split-down": () => setWorkspace(splitPaneVertical),
       revealInFinder: () => {
         const path = activeDocument(workspaceRef.current)?.path;
         if (path) {
@@ -743,11 +766,13 @@ export function App() {
         return;
       }
       if (!event.shiftKey && !event.altKey && /^[1-9]$/.test(event.key)) {
-        const docs = workspaceRef.current.documents;
+        const ws = workspaceRef.current;
+        const pane = ws.panes.find((entry) => entry.id === ws.activePaneId);
+        const docs = pane?.documentIds ?? [];
         const index = Number(event.key) - 1;
         if (index < docs.length) {
           event.preventDefault();
-          activateTab(docs[index].id);
+          activateTab(ws.activePaneId, docs[index]);
         }
         return;
       }
@@ -761,19 +786,10 @@ export function App() {
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [commands, activateTab, switchTabBy]);
 
-  const tabsBar = (
-    <TabsBar
-      documents={workspace.documents}
-      activeDocumentId={workspace.activeDocumentId}
-      onActivate={activateTab}
-      onClose={closeTab}
-    />
-  );
-
   return (
     <AppShell
       focusMode={workspace.focusMode}
-      tabsBar={tabsBar}
+      tabsBar={null}
       sidebar={
         workspace.sidebarVisible ? (
           <Sidebar
@@ -789,14 +805,38 @@ export function App() {
       onSave={commandHandlers.saveDocument}
       onSaveAs={commandHandlers.saveDocumentAs}
     >
-      <MarkdownEditor
-        value={activeText}
-        onChange={handleChange}
-        imageBaseDir={active?.path ? dirname(active.path) : null}
+      <SplitPaneLayout
+        workspace={workspace}
         typewriterMode={workspace.typewriterMode}
-        onViewReady={(view) => {
-          viewRef.current = view;
+        onActivatePane={activateEditorPane}
+        onActivateDocument={activateTab}
+        onCloseDocument={closeTab}
+        onChangeDocument={handleDocumentChange}
+        onMoveTab={(sourcePaneId, documentId, targetPaneId, targetIndex) =>
+          setWorkspace((ws) =>
+            moveDocumentToPaneAt(
+              ws,
+              sourcePaneId,
+              documentId,
+              targetPaneId,
+              targetIndex
+            )
+          )
+        }
+        onCopyTab={(documentId, targetPaneId, targetIndex) =>
+          setWorkspace((ws) =>
+            copyDocumentReferenceToPaneAt(ws, documentId, targetPaneId, targetIndex)
+          )
+        }
+        onViewReady={(paneId, view) => {
+          editorViewsRef.current.set(paneId, view);
+          if (workspaceRef.current.activePaneId === paneId) {
+            viewRef.current = view;
+          }
         }}
+        onResizeEnd={(splitId: SplitId, ratio: number) =>
+          setWorkspace((ws) => updateSplitRatio(ws, splitId, ratio))
+        }
       />
       {workspace.dropActive && (
         <div className="drop-overlay" aria-hidden="true">
