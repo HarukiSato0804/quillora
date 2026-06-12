@@ -16,6 +16,7 @@ import { listDecorations } from "./extensions/listDecorations";
 import { taskListDecorations } from "./extensions/taskListDecorations";
 import { horizontalRuleDecorations } from "./extensions/horizontalRuleDecorations";
 import { markdownHighlight } from "./extensions/markdownHighlightStyle";
+import { slashCommandExtension } from "./extensions/slashCommandExtension";
 
 type MarkdownEditorProps = {
   value: string;
@@ -46,6 +47,7 @@ export function MarkdownEditor({
       mathDecorations(),
       tableDecorations(),
       mermaidDecorations(),
+      slashCommandExtension(),
       ...(typewriterMode ? [typewriterScroll()] : []),
       EditorView.lineWrapping,
     ],
@@ -65,6 +67,7 @@ export function MarkdownEditor({
         lineNumbers: false,
         foldGutter: false,
         highlightActiveLine: true,
+        autocompletion: false,
       }}
     />
   );
