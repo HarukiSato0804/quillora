@@ -33,6 +33,7 @@ import {
   activeDocument,
   addDocuments,
   closeDocumentInPane,
+  closePane,
   copyDocumentReferenceToPaneAt,
   createWorkspace,
   findDocumentByCanonicalPath,
@@ -106,6 +107,10 @@ export function App() {
   const [workspace, setWorkspace] = useState<WorkspaceState>(() =>
     newUntitledDocument(createWorkspace())
   );
+  const [draggedTab, setDraggedTab] = useState<{
+    paneId: PaneId;
+    documentId: DocumentId;
+  } | null>(null);
   const workspaceRef = useRef(workspace);
   workspaceRef.current = workspace;
 
@@ -477,6 +482,40 @@ export function App() {
     [closeWithIntent]
   );
 
+  const closeEditorPane = useCallback(
+    async (paneId: PaneId) => {
+      const pane = workspaceRef.current.panes.find((entry) => entry.id === paneId);
+      if (!pane || workspaceRef.current.panes.length < 2) {
+        return;
+      }
+
+      const dirtyDocumentIds = pane.documentIds.filter((documentId) => {
+        const doc = workspaceRef.current.documents.find(
+          (entry) => entry.id === documentId
+        );
+        const referenceCount = workspaceRef.current.panes.filter((entry) =>
+          entry.documentIds.includes(documentId)
+        ).length;
+        return doc && isDirty(doc) && referenceCount === 1;
+      });
+
+      for (const documentId of dirtyDocumentIds) {
+        await closeWithIntent({ type: "single", documentId });
+        if (
+          workspaceRef.current.documents.some(
+            (doc) => doc.id === documentId && isDirty(doc)
+          )
+        ) {
+          return;
+        }
+      }
+
+      editorViewsRef.current.delete(paneId);
+      setWorkspace((ws) => closePane(ws, paneId));
+    },
+    [closeWithIntent]
+  );
+
   const activateTab = useCallback((paneId: PaneId, id: DocumentId) => {
     setWorkspace((ws) => activateDocumentInPane(ws, paneId, id));
   }, []);
@@ -484,6 +523,67 @@ export function App() {
   const activateEditorPane = useCallback((paneId: PaneId) => {
     setWorkspace((ws) => activatePane(ws, paneId));
   }, []);
+
+  const splitTabRight = useCallback((paneId: PaneId, documentId: DocumentId) => {
+    setWorkspace((ws) =>
+      splitPaneHorizontal(activateDocumentInPane(ws, paneId, documentId), paneId)
+    );
+  }, []);
+
+  const splitTabDown = useCallback((paneId: PaneId, documentId: DocumentId) => {
+    setWorkspace((ws) =>
+      splitPaneVertical(activateDocumentInPane(ws, paneId, documentId), paneId)
+    );
+  }, []);
+
+  const splitTabToPaneEdge = useCallback(
+    (
+      sourcePaneId: PaneId,
+      documentId: DocumentId,
+      targetPaneId: PaneId,
+      edge: "left" | "right" | "top" | "bottom"
+    ) => {
+      setWorkspace((ws) => {
+        const next =
+          edge === "left" || edge === "right"
+            ? splitPaneHorizontal(ws, targetPaneId)
+            : splitPaneVertical(ws, targetPaneId);
+        if (next.panes.length === ws.panes.length) {
+          return ws;
+        }
+
+        const newPaneId = next.activePaneId;
+        const newPane = next.panes.find((pane) => pane.id === newPaneId);
+        if (!newPane) {
+          return next;
+        }
+
+        let moved = next;
+        for (const existingId of newPane.documentIds) {
+          if (existingId !== documentId) {
+            moved = closeDocumentInPane(moved, newPaneId, existingId);
+          }
+        }
+
+        if (newPane.documentIds.includes(documentId)) {
+          if (sourcePaneId !== newPaneId) {
+            moved = closeDocumentInPane(moved, sourcePaneId, documentId);
+          }
+          return activateDocumentInPane(moved, newPaneId, documentId);
+        }
+
+        return moveDocumentToPaneAt(
+          moved,
+          sourcePaneId,
+          documentId,
+          newPaneId,
+          0
+        );
+      });
+      setDraggedTab(null);
+    },
+    []
+  );
 
   const switchTabBy = useCallback((offset: number) => {
     setWorkspace((ws) => {
@@ -1001,10 +1101,14 @@ export function App() {
     >
       <SplitPaneLayout
         workspace={workspace}
+        draggedTab={draggedTab}
         typewriterMode={workspace.typewriterMode}
         onActivatePane={activateEditorPane}
         onActivateDocument={activateTab}
         onCloseDocument={closeTab}
+        onClosePane={(paneId) => void closeEditorPane(paneId)}
+        onSplitRight={splitTabRight}
+        onSplitDown={splitTabDown}
         onChangeDocument={handleDocumentChange}
         onMoveTab={(sourcePaneId, documentId, targetPaneId, targetIndex) =>
           setWorkspace((ws) =>
@@ -1022,6 +1126,9 @@ export function App() {
             copyDocumentReferenceToPaneAt(ws, documentId, targetPaneId, targetIndex)
           )
         }
+        onTabDragStart={setDraggedTab}
+        onTabDragEnd={() => setDraggedTab(null)}
+        onDropTabOnEdge={splitTabToPaneEdge}
         onViewReady={(paneId, view) => {
           editorViewsRef.current.set(paneId, view);
           if (workspaceRef.current.activePaneId === paneId) {

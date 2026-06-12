@@ -75,6 +75,37 @@ body {
   scrollbar-width: thin;
 }
 
+.editor-pane-header {
+  display: flex;
+  align-items: stretch;
+  min-height: 32px;
+  border-bottom: 1px solid #e2e4e8;
+  background: #eef0f3;
+}
+
+.editor-pane-header .tabs-bar {
+  flex: 1;
+  min-width: 0;
+  border-bottom: none;
+}
+
+.pane-close {
+  flex: 0 0 32px;
+  border: none;
+  border-left: 1px solid #e2e4e8;
+  color: #57606a;
+  background: #eef0f3;
+  font: inherit;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pane-close:hover {
+  color: #1f2328;
+  background: #dfe3e8;
+}
+
 .tab {
   position: relative;
   display: flex;
@@ -147,6 +178,35 @@ body {
   color: #1f2328;
 }
 
+.context-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 132px;
+  padding: 4px;
+  border: 1px solid rgba(31, 35, 40, 0.16);
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(31, 35, 40, 0.16);
+}
+
+.context-menu button {
+  display: block;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 4px;
+  color: #1f2328;
+  background: transparent;
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.context-menu button:hover {
+  background: #f0f3f6;
+}
+
 .app-body {
   display: flex;
   flex: 1;
@@ -197,6 +257,55 @@ body {
   flex: 1;
   min-height: 0;
   background: #ffffff;
+}
+
+.pane-edge-drop-zones {
+  position: absolute;
+  inset: 32px 0 0;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.pane-edge-drop-zone {
+  position: absolute;
+  background: rgba(9, 105, 218, 0.14);
+  border: 1px solid rgba(9, 105, 218, 0.26);
+  pointer-events: auto;
+  transition: background 0.12s ease;
+}
+
+.pane-edge-drop-zone:hover {
+  background: rgba(9, 105, 218, 0.22);
+}
+
+.pane-edge-drop-zone-left,
+.pane-edge-drop-zone-right {
+  top: 0;
+  bottom: 0;
+  width: 60px;
+}
+
+.pane-edge-drop-zone-left {
+  left: 0;
+}
+
+.pane-edge-drop-zone-right {
+  right: 0;
+}
+
+.pane-edge-drop-zone-top,
+.pane-edge-drop-zone-bottom {
+  left: 0;
+  right: 0;
+  height: 60px;
+}
+
+.pane-edge-drop-zone-top {
+  top: 0;
+}
+
+.pane-edge-drop-zone-bottom {
+  bottom: 0;
 }
 
 .split-handle {
