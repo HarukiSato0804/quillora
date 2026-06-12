@@ -43,9 +43,9 @@ describe("parseHeadings", () => {
   it("extracts ATX headings with levels and line numbers", () => {
     const text = "# Title\n\nbody\n\n## Section\n\n### Sub";
     expect(parseHeadings(text)).toEqual([
-      { level: 1, text: "Title", line: 1 },
-      { level: 2, text: "Section", line: 5 },
-      { level: 3, text: "Sub", line: 7 },
+      { level: 1, text: "Title", line: 1, from: 0 },
+      { level: 2, text: "Section", line: 5, from: 15 },
+      { level: 3, text: "Sub", line: 7, from: 27 },
     ]);
   });
 
@@ -65,32 +65,34 @@ describe("parseHeadings", () => {
   });
 
   it("allows empty headings", () => {
-    expect(parseHeadings("##")).toEqual([{ level: 2, text: "", line: 1 }]);
+    expect(parseHeadings("##")).toEqual([
+      { level: 2, text: "", line: 1, from: 0 },
+    ]);
   });
 
   it("strips closing hash markers", () => {
     expect(parseHeadings("## Section ##")).toEqual([
-      { level: 2, text: "Section", line: 1 },
+      { level: 2, text: "Section", line: 1, from: 0 },
     ]);
   });
 
   it("ignores headings inside fenced code blocks", () => {
     const text = "```\n# not a heading\n```\n# real";
     expect(parseHeadings(text)).toEqual([
-      { level: 1, text: "real", line: 4 },
+      { level: 1, text: "real", line: 4, from: 24 },
     ]);
   });
 
   it("handles tilde fences independently of backtick fences", () => {
     const text = "~~~\n# hidden\n~~~\n## visible";
     expect(parseHeadings(text)).toEqual([
-      { level: 2, text: "visible", line: 4 },
+      { level: 2, text: "visible", line: 4, from: 17 },
     ]);
   });
 
   it("allows up to three leading spaces", () => {
     expect(parseHeadings("   # indented")).toEqual([
-      { level: 1, text: "indented", line: 1 },
+      { level: 1, text: "indented", line: 1, from: 0 },
     ]);
   });
 });

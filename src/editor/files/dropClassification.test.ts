@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   classifyDroppedPath,
   classifyDroppedPaths,
+  extractPathsFromDataTransfer,
+  fileUriToPath,
   splitDroppedPaths,
 } from "./dropClassification";
 import { planOpenPaths } from "./openPipeline";
@@ -70,5 +72,52 @@ describe("splitDroppedPaths", () => {
       path: "/open.md",
       id: "open",
     });
+  });
+});
+
+describe("fileUriToPath", () => {
+  it("decodes POSIX file URIs", () => {
+    expect(fileUriToPath("file:///Users/me/My%20Note.md")).toBe(
+      "/Users/me/My Note.md"
+    );
+  });
+
+  it("accepts localhost file URIs", () => {
+    expect(fileUriToPath("file://localhost/Users/me/a.md")).toBe(
+      "/Users/me/a.md"
+    );
+  });
+
+  it("returns an empty string for non-file URIs", () => {
+    expect(fileUriToPath("https://example.com/a.md")).toBe("");
+  });
+});
+
+describe("extractPathsFromDataTransfer", () => {
+  function dataTransfer(
+    types: string[],
+    data: string
+  ): DataTransfer {
+    return {
+      types,
+      getData: (type: string) => (type === "text/uri-list" ? data : ""),
+    } as DataTransfer;
+  }
+
+  it("extracts decoded file paths from text/uri-list", () => {
+    const dt = dataTransfer(
+      ["text/uri-list"],
+      "# comment\nfile:///Users/me/A%20Note.md\r\nfile:///tmp/b.md"
+    );
+    expect(extractPathsFromDataTransfer(dt)).toEqual([
+      "/Users/me/A Note.md",
+      "/tmp/b.md",
+    ]);
+  });
+
+  it("ignores drops without text/uri-list", () => {
+    expect(extractPathsFromDataTransfer(dataTransfer(["Files"], ""))).toEqual(
+      []
+    );
   });
 });

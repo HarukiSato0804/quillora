@@ -21,8 +21,21 @@ function loadMermaid(): Promise<typeof import("mermaid").default> {
     mermaidPromise = import("mermaid").then((module) => {
       module.default.initialize({
         startOnLoad: false,
-        theme: "neutral",
+        theme: "base",
         securityLevel: "strict",
+        themeVariables: {
+          primaryColor: "#f0f4f8",
+          primaryBorderColor: "#c1cad4",
+          primaryTextColor: "#1f2328",
+          secondaryColor: "#eef2f6",
+          secondaryBorderColor: "#c1cad4",
+          tertiaryColor: "#f6f8fa",
+          lineColor: "#8c95a1",
+          textColor: "#1f2328",
+          fontSize: "13px",
+          fontFamily:
+            "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans', sans-serif",
+        },
       });
       return module.default;
     });

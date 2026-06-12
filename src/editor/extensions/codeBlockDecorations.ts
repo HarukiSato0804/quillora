@@ -44,20 +44,35 @@ function lineDecoration(classes: string): Decoration {
   return decoration;
 }
 
+const hiddenFence = Decoration.replace({});
+
 export function buildCodeBlockDecorations(state: EditorState): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
+  const cursorPos = state.selection.main.head;
+  const cursorLine = state.doc.lineAt(cursorPos).number;
 
   for (const block of parseCodeBlocks(state.doc.toString())) {
+    const closingFenceEnd = block.closed ? state.doc.line(block.toLine).to : -1;
+    const isActive =
+      cursorLine >= block.fromLine &&
+      cursorLine <= block.toLine &&
+      cursorPos !== closingFenceEnd;
+
     for (let n = block.fromLine; n <= block.toLine; n++) {
       const line = state.doc.line(n);
       let classes = "cm-md-codeblock";
-      if (n === block.fromLine) {
-        classes += " cm-md-codeblock-first";
-      }
-      if (n === block.toLine) {
-        classes += " cm-md-codeblock-last";
-      }
+      if (n === block.fromLine) classes += " cm-md-codeblock-first";
+      if (n === block.toLine) classes += " cm-md-codeblock-last";
+
       builder.add(line.from, line.from, lineDecoration(classes));
+
+      const isFenceLine =
+        n === block.fromLine || (n === block.toLine && block.closed);
+
+      if (!isActive && isFenceLine) {
+        // Visually hide fence text; the language badge widget is still rendered.
+        builder.add(line.from, line.to, hiddenFence);
+      }
 
       if (n === block.fromLine && block.lang) {
         builder.add(
@@ -78,7 +93,7 @@ export function buildCodeBlockDecorations(state: EditorState): DecorationSet {
 export const codeBlockDecorationsField = StateField.define<DecorationSet>({
   create: buildCodeBlockDecorations,
   update(decorations, transaction) {
-    if (transaction.docChanged) {
+    if (transaction.docChanged || transaction.selection) {
       return buildCodeBlockDecorations(transaction.state);
     }
     return decorations;

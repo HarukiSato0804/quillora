@@ -84,3 +84,33 @@ export function splitDroppedPaths(paths: string[]): DropSplit {
 
   return { markdownPaths, problems };
 }
+
+export function fileUriToPath(uri: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(uri.trim());
+  } catch {
+    return "";
+  }
+  if (parsed.protocol !== "file:") {
+    return "";
+  }
+  const path = decodeURIComponent(parsed.pathname);
+  if (parsed.hostname && parsed.hostname !== "localhost") {
+    return `//${parsed.hostname}${path}`;
+  }
+  return path;
+}
+
+export function extractPathsFromDataTransfer(dt: DataTransfer): string[] {
+  if (!Array.from(dt.types).includes("text/uri-list")) {
+    return [];
+  }
+  return dt
+    .getData("text/uri-list")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== "" && !line.startsWith("#"))
+    .map(fileUriToPath)
+    .filter((path) => path !== "");
+}

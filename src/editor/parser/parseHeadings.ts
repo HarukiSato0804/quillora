@@ -2,6 +2,7 @@ export type Heading = {
   level: number;
   text: string;
   line: number;
+  from: number;
 };
 
 const ATX_HEADING = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?[ \t]*$/;
@@ -39,10 +40,12 @@ export function parseHeadings(markdown: string): Heading[] {
   const headings: Heading[] = [];
   let insideFence = false;
   let fenceMarker = "";
+  let offset = 0;
 
   const lines = markdown.split("\n");
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    const lineFrom = offset;
 
     const fenceMatch = line.match(FENCE);
     if (fenceMatch) {
@@ -52,9 +55,11 @@ export function parseHeadings(markdown: string): Heading[] {
       } else if (fenceMatch[1] === fenceMarker) {
         insideFence = false;
       }
+      offset += line.length + (i < lines.length - 1 ? 1 : 0);
       continue;
     }
     if (insideFence) {
+      offset += line.length + (i < lines.length - 1 ? 1 : 0);
       continue;
     }
 
@@ -66,8 +71,10 @@ export function parseHeadings(markdown: string): Heading[] {
         // strip optional closing #'s: "## title ##" -> "title"
         text: rawText.replace(/[ \t]+#+$/, "").trim(),
         line: i + 1,
+        from: lineFrom,
       });
     }
+    offset += line.length + (i < lines.length - 1 ? 1 : 0);
   }
 
   return headings;

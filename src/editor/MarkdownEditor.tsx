@@ -12,6 +12,8 @@ import { tableDecorations } from "./extensions/tableDecorations";
 import { mermaidDecorations } from "./extensions/mermaidDecorations";
 import { typewriterScroll } from "./extensions/typewriterScroll";
 import { codeBlockDecorations } from "./extensions/codeBlockDecorations";
+import { listDecorations } from "./extensions/listDecorations";
+import { horizontalRuleDecorations } from "./extensions/horizontalRuleDecorations";
 import { markdownHighlight } from "./extensions/markdownHighlightStyle";
 
 type MarkdownEditorProps = {
@@ -34,6 +36,8 @@ export function MarkdownEditor({
       markdown({ base: markdownLanguage, codeLanguages: languages }),
       markdownHighlight(),
       codeBlockDecorations(),
+      listDecorations(),
+      horizontalRuleDecorations(),
       headingDecorations(),
       inlineDecorations(),
       imageDecorations({ baseDir: imageBaseDir, toAssetUrl: convertFileSrc }),

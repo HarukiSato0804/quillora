@@ -3,9 +3,14 @@ import type { Heading } from "../parser/parseHeadings";
 type SidebarProps = {
   headings: Heading[];
   outlineVisible: boolean;
+  onHeadingClick?: (from: number) => void;
 };
 
-export function Sidebar({ headings, outlineVisible }: SidebarProps) {
+export function Sidebar({
+  headings,
+  outlineVisible,
+  onHeadingClick,
+}: SidebarProps) {
   return (
     <aside className="sidebar">
       {outlineVisible && (
@@ -18,10 +23,19 @@ export function Sidebar({ headings, outlineVisible }: SidebarProps) {
               {headings.map((heading) => (
                 <li
                   key={`${heading.line}-${heading.text}`}
-                  className="sidebar-item"
-                  style={{ paddingLeft: `${(heading.level - 1) * 12 + 12}px` }}
+                  className="sidebar-list-item"
                 >
-                  {heading.text || "(empty heading)"}
+                  <button
+                    type="button"
+                    className="sidebar-item"
+                    style={{
+                      marginLeft: `${(heading.level - 1) * 12}px`,
+                      width: `calc(100% - ${(heading.level - 1) * 12}px)`,
+                    }}
+                    onClick={() => onHeadingClick?.(heading.from)}
+                  >
+                    {heading.text || "(empty heading)"}
+                  </button>
                 </li>
               ))}
             </ul>

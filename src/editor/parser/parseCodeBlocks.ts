@@ -2,6 +2,7 @@ export type CodeBlock = {
   fromLine: number;
   toLine: number;
   lang: string | null;
+  closed: boolean;
 };
 
 const FENCE = /^ {0,3}(```|~~~)(.*)$/;
@@ -29,7 +30,7 @@ export function parseCodeBlocks(text: string): CodeBlock[] {
         fromLine: i + 1,
       };
     } else if (match[1] === open.marker) {
-      blocks.push({ fromLine: open.fromLine, toLine: i + 1, lang: open.lang });
+      blocks.push({ fromLine: open.fromLine, toLine: i + 1, lang: open.lang, closed: true });
       open = null;
     }
   }
@@ -39,6 +40,7 @@ export function parseCodeBlocks(text: string): CodeBlock[] {
       fromLine: open.fromLine,
       toLine: lines.length,
       lang: open.lang,
+      closed: false,
     });
   }
 

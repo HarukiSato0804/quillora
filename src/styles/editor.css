@@ -24,18 +24,18 @@
 }
 
 .markdown-editor .cm-content {
-  max-width: 760px;
+  max-width: 800px;
   margin: 0 auto;
-  padding: 0 32px;
+  padding: 0 40px;
 }
 
 .markdown-editor .cm-editor.cm-focused {
   outline: none;
 }
 
-/* Keep the caret line barely noticeable instead of a blue browser-like bar. */
-.markdown-editor .cm-activeLine {
-  background: rgba(140, 149, 159, 0.07);
+/* Only tint the active line when it has visible text; empty lines get no background. */
+.markdown-editor .cm-activeLine:not(:empty) {
+  background: rgba(140, 149, 159, 0.05);
 }
 
 /* ---- Headings ---------------------------------------------------- */
@@ -108,6 +108,26 @@
   text-decoration-color: rgba(9, 105, 218, 0.35);
 }
 
+/* ---- Lists and horizontal rules ----------------------------------- */
+
+.markdown-editor .cm-md-list-line {
+  padding-left: 2px;
+}
+
+.markdown-editor .cm-md-list-marker {
+  display: inline-block;
+  width: 1ch;
+  color: #57606a;
+  text-align: center;
+}
+
+.markdown-editor .cm-md-hr {
+  height: 1px;
+  margin: 0.85em 0;
+  border: 0;
+  background: #d8dde3;
+}
+
 /* ---- Fenced code blocks ------------------------------------------- */
 
 .markdown-editor .cm-md-codeblock {
@@ -147,7 +167,7 @@
 .markdown-editor .cm-md-table,
 .markdown-editor .cm-md-math-block,
 .markdown-editor .cm-md-mermaid {
-  padding: 10px 0;
+  padding: 12px 0;
 }
 
 .markdown-editor .cm-md-table table {

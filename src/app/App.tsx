@@ -4,7 +4,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { listen } from "@tauri-apps/api/event";
 import { openSearchPanel } from "@codemirror/search";
 import type { EditorState, TransactionSpec } from "@codemirror/state";
-import type { EditorView } from "@codemirror/view";
+import { EditorView } from "@codemirror/view";
 import { AppShell } from "./AppShell";
 import { QuitDialog } from "./QuitDialog";
 import { setupAppMenu } from "./menu";
@@ -79,7 +79,10 @@ import {
   type ReadMarkdownFilesResult,
 } from "../editor/tauri/fileApi";
 import { planOpenPaths } from "../editor/files/openPipeline";
-import { splitDroppedPaths } from "../editor/files/dropClassification";
+import {
+  extractPathsFromDataTransfer,
+  splitDroppedPaths,
+} from "../editor/files/dropClassification";
 
 export function App() {
   const [workspace, setWorkspace] = useState<WorkspaceState>(() =>
@@ -104,6 +107,18 @@ export function App() {
   }, []);
 
   const headings = useMemo(() => parseHeadings(activeText), [activeText]);
+
+  const jumpToHeading = useCallback((from: number) => {
+    const view = viewRef.current;
+    if (!view) {
+      return;
+    }
+    view.dispatch({
+      selection: { anchor: from },
+      effects: EditorView.scrollIntoView(from, { y: "center" }),
+    });
+    view.focus();
+  }, []);
 
   const title = windowTitle(active);
   useEffect(() => {
@@ -639,6 +654,42 @@ export function App() {
   );
 
   useEffect(() => {
+    const isUriListDrag = (dataTransfer: DataTransfer | null): boolean =>
+      dataTransfer
+        ? Array.from(dataTransfer.types).includes("text/uri-list")
+        : false;
+
+    const handleWindowDragOver = (event: DragEvent) => {
+      if (!isUriListDrag(event.dataTransfer)) {
+        return;
+      }
+      event.preventDefault();
+      setWorkspace((ws) => setDropActive(ws, true));
+    };
+
+    const handleWindowDrop = (event: DragEvent) => {
+      if (!event.dataTransfer) {
+        return;
+      }
+      const paths = extractPathsFromDataTransfer(event.dataTransfer);
+      if (paths.length === 0) {
+        return;
+      }
+      event.preventDefault();
+      setWorkspace((ws) => setDropActive(ws, false));
+      void handleDrop(paths);
+    };
+
+    const handleWindowDragLeave = (event: DragEvent) => {
+      if (event.relatedTarget === null) {
+        setWorkspace((ws) => setDropActive(ws, false));
+      }
+    };
+
+    window.addEventListener("dragover", handleWindowDragOver);
+    window.addEventListener("drop", handleWindowDrop);
+    window.addEventListener("dragleave", handleWindowDragLeave);
+
     const unlistenPromise = getCurrentWebview().onDragDropEvent((event) => {
       if (event.payload.type === "enter" || event.payload.type === "over") {
         setWorkspace((ws) => setDropActive(ws, true));
@@ -650,6 +701,9 @@ export function App() {
       }
     });
     return () => {
+      window.removeEventListener("dragover", handleWindowDragOver);
+      window.removeEventListener("drop", handleWindowDrop);
+      window.removeEventListener("dragleave", handleWindowDragLeave);
       void unlistenPromise.then((unlisten) => unlisten()).catch(() => {});
     };
   }, [handleDrop]);
@@ -725,6 +779,7 @@ export function App() {
           <Sidebar
             headings={headings}
             outlineVisible={workspace.outlineVisible}
+            onHeadingClick={jumpToHeading}
           />
         ) : null
       }
