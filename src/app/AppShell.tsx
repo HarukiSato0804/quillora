@@ -6,15 +6,8 @@ type AppShellProps = {
   sidebar: ReactNode;
   statusBar: ReactNode;
   children: ReactNode;
-  canSplit: boolean;
-  onNewFromTemplate: () => void;
-  onOpen: () => void;
-  onOpenFolder: () => void;
-  onImportFolder: () => void;
-  onSave: () => void;
-  onSaveAs: () => void;
-  onSplitRight: () => void;
-  onSplitDown: () => void;
+  sidebarVisible: boolean;
+  onToggleSidebar: () => void;
 };
 
 export function AppShell({
@@ -23,28 +16,20 @@ export function AppShell({
   sidebar,
   statusBar,
   children,
-  canSplit,
-  onNewFromTemplate,
-  onOpen,
-  onOpenFolder,
-  onImportFolder,
-  onSave,
-  onSaveAs,
-  onSplitRight,
-  onSplitDown,
+  sidebarVisible,
+  onToggleSidebar,
 }: AppShellProps) {
   return (
     <div className={focusMode ? "app-shell focus-mode" : "app-shell"}>
       <header className="toolbar">
-        <button className="btn-secondary" onClick={onNewFromTemplate}>New▾</button>
-        <button className="btn-secondary" onClick={onOpen}>Open…</button>
-        <button className="btn-secondary" onClick={onOpenFolder}>Open Folder…</button>
-        <button className="btn-secondary" onClick={onImportFolder}>Import Folder…</button>
-        <button className="btn-primary" onClick={onSave}>Save</button>
-        <button className="btn-secondary" onClick={onSaveAs}>Save As…</button>
-        <span className="toolbar-sep" />
-        <button className="btn-accent" onClick={onSplitRight} disabled={!canSplit} title="Split Right (⌘\)">Split Right</button>
-        <button className="btn-accent" onClick={onSplitDown} disabled={!canSplit} title="Split Down (⌘⇧\)">Split Down</button>
+        <button
+          className="btn-icon"
+          onClick={onToggleSidebar}
+          aria-label={sidebarVisible ? "Hide sidebar" : "Show sidebar"}
+          title={sidebarVisible ? "Hide sidebar" : "Show sidebar"}
+        >
+          ◧
+        </button>
       </header>
       {tabsBar}
       <div className="app-body">

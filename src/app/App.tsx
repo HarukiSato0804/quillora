@@ -1110,15 +1110,8 @@ export function App() {
         ) : null
       }
       statusBar={<StatusBar document={active} />}
-      canSplit={active !== null}
-      onNewFromTemplate={() => setTemplateDialogOpen(true)}
-      onOpen={commandHandlers.openDocuments}
-      onOpenFolder={() => void openWorkspaceFolder()}
-      onImportFolder={() => void importFolderAsTabs()}
-      onSave={commandHandlers.saveDocument}
-      onSaveAs={commandHandlers.saveDocumentAs}
-      onSplitRight={() => commandHandlers["view:split-right"]()}
-      onSplitDown={() => commandHandlers["view:split-down"]()}
+      sidebarVisible={workspace.sidebarVisible}
+      onToggleSidebar={commandHandlers.toggleSidebar}
     >
       <SplitPaneLayout
         workspace={workspace}
