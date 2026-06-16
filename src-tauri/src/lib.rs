@@ -1,4 +1,5 @@
 mod commands;
+mod gdrive;
 
 use std::sync::Mutex;
 
@@ -24,7 +25,11 @@ pub fn run() {
             commands::save_session,
             commands::load_session,
             commands::stat_files,
-            commands::scan_workspace
+            commands::scan_workspace,
+            gdrive::gdrive_begin_auth,
+            gdrive::gdrive_store_tokens,
+            gdrive::gdrive_load_tokens,
+            gdrive::gdrive_clear_tokens
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
