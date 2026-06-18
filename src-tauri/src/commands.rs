@@ -73,6 +73,40 @@ pub fn load_session(app: tauri::AppHandle) -> Option<String> {
         .and_then(|path| fs::read_to_string(path).ok())
 }
 
+fn drafts_store_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let dir = app.path().app_config_dir().map_err(|err| err.to_string())?;
+    fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
+    Ok(dir.join("drafts.json"))
+}
+
+/// Persist unsaved editor content (a recovery backup) atomically. This is the
+/// crash/draft recovery store: if the app dies with dirty buffers, the next
+/// launch reads this back and offers to restore. Written atomically so a crash
+/// during the write cannot corrupt an earlier good draft.
+#[tauri::command]
+pub fn save_drafts(app: tauri::AppHandle, json: String) -> Result<(), String> {
+    let store = drafts_store_path(&app)?;
+    atomic_write(&store, json.as_bytes())
+}
+
+#[tauri::command]
+pub fn load_drafts(app: tauri::AppHandle) -> Option<String> {
+    drafts_store_path(&app)
+        .ok()
+        .and_then(|path| fs::read_to_string(path).ok())
+}
+
+#[tauri::command]
+pub fn clear_drafts(app: tauri::AppHandle) -> Result<(), String> {
+    let store = drafts_store_path(&app)?;
+    match fs::remove_file(&store) {
+        Ok(()) => Ok(()),
+        // Already gone is success — clearing is idempotent.
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(err.to_string()),
+    }
+}
+
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileStat {
@@ -370,6 +404,75 @@ mod tests {
     }
 
     #[test]
+    fn write_markdown_file_writes_atomically_and_returns_mtime() {
+        // Isolated dir: the no-temp-residue assertion would otherwise race with
+        // sibling write tests sharing the same directory.
+        let dir = std::env::temp_dir().join("markflow-test-atomic");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("atomic-write.md");
+        std::fs::remove_file(&file).ok();
+
+        let result =
+            super::write_markdown_file(file.to_string_lossy().into_owned(), "# v1".into(), None)
+                .unwrap();
+        assert!(result.mtime_ms.is_some());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "# v1");
+        // No temp residue left behind in the directory.
+        let leftover_tmp = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .any(|entry| entry.file_name().to_string_lossy().contains(".tmp"));
+        assert!(!leftover_tmp, "temp file should be renamed away");
+
+        std::fs::remove_file(&file).ok();
+    }
+
+    #[test]
+    fn write_markdown_file_rejects_external_change() {
+        let dir = std::env::temp_dir().join("markflow-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("overwrite-guard.md");
+        super::write_markdown_file(file.to_string_lossy().into_owned(), "disk".into(), None)
+            .unwrap();
+
+        // Pretend the caller last saw the file far in the past; the on-disk file
+        // is newer, so a guarded write must be refused.
+        let err = super::write_markdown_file(
+            file.to_string_lossy().into_owned(),
+            "mine".into(),
+            Some(1.0),
+        )
+        .unwrap_err();
+        assert_eq!(err, super::EXTERNAL_CHANGE_ERROR);
+        // The file on disk is untouched.
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "disk");
+
+        std::fs::remove_file(&file).ok();
+    }
+
+    #[test]
+    fn write_markdown_file_allows_write_when_mtime_matches() {
+        let dir = std::env::temp_dir().join("markflow-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("guard-match.md");
+        let first =
+            super::write_markdown_file(file.to_string_lossy().into_owned(), "one".into(), None)
+                .unwrap();
+
+        // Passing the current mtime back means "I have the latest" — allowed.
+        let second = super::write_markdown_file(
+            file.to_string_lossy().into_owned(),
+            "two".into(),
+            first.mtime_ms,
+        )
+        .unwrap();
+        assert!(second.mtime_ms.is_some());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "two");
+
+        std::fs::remove_file(&file).ok();
+    }
+
+    #[test]
     fn stat_files_returns_mtime_for_existing_and_none_for_missing() {
         let dir = std::env::temp_dir().join("markflow-test");
         std::fs::create_dir_all(&dir).unwrap();
@@ -474,13 +577,86 @@ pub fn read_markdown_file(path: String) -> Result<String, String> {
     fs::read_to_string(&path).map_err(|err| err.to_string())
 }
 
+/// Marker prefix the frontend matches on to distinguish an external-change
+/// conflict from an ordinary I/O failure. Kept stable; do not localize.
+pub const EXTERNAL_CHANGE_ERROR: &str = "EXTERNAL_CHANGE";
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WriteResult {
+    /// Modified time of the file after the write, so the caller can refresh its
+    /// last-known mtime without a follow-up stat (avoids a false "changed on
+    /// disk" on the next poll).
+    pub mtime_ms: Option<f64>,
+}
+
+/// Write atomically: stage the contents in a sibling temp file, fsync it, then
+/// rename over the destination. A crash mid-write therefore leaves either the
+/// old file or the new one intact — never a truncated mix. `expected_mtime_ms`,
+/// when provided, guards against clobbering an external edit: if the file on
+/// disk is newer than the caller expects, the write is refused.
 #[tauri::command]
-pub fn write_markdown_file(path: String, contents: String) -> Result<(), String> {
+pub fn write_markdown_file(
+    path: String,
+    contents: String,
+    expected_mtime_ms: Option<f64>,
+) -> Result<WriteResult, String> {
     let path = PathBuf::from(path);
 
     if !is_allowed_markdown_path(&path) {
         return Err("Only .md, .markdown, and .txt files are supported.".to_string());
     }
 
-    fs::write(&path, contents).map_err(|err| err.to_string())
+    // Overwrite guard: refuse if the on-disk file changed since the caller last
+    // saw it. A small clock-skew tolerance avoids spurious conflicts from
+    // filesystems with coarse mtime resolution.
+    if let Some(expected) = expected_mtime_ms {
+        if let Some(current) = file_mtime_ms(&path) {
+            if current > expected + 1.0 {
+                return Err(EXTERNAL_CHANGE_ERROR.to_string());
+            }
+        }
+    }
+
+    atomic_write(&path, contents.as_bytes())?;
+    Ok(WriteResult {
+        mtime_ms: file_mtime_ms(&path),
+    })
+}
+
+fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+
+    let dir = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+
+    // Temp file in the same directory so the rename stays on one filesystem
+    // (cross-device renames fail). Include the pid to avoid collisions.
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("untitled");
+    let tmp = dir.join(format!(".{file_name}.{}.tmp", std::process::id()));
+
+    let write_result = (|| -> std::io::Result<()> {
+        let mut file = fs::File::create(&tmp)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        Ok(())
+    })();
+
+    if let Err(err) = write_result {
+        let _ = fs::remove_file(&tmp);
+        return Err(err.to_string());
+    }
+
+    if let Err(err) = fs::rename(&tmp, path) {
+        let _ = fs::remove_file(&tmp);
+        return Err(err.to_string());
+    }
+
+    Ok(())
 }

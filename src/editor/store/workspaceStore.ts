@@ -470,6 +470,34 @@ export function markDocumentSaved(
   }));
 }
 
+// Mark a document as mid-save so the UI can reflect in-flight writes and so a
+// failure can later be surfaced. Clears any previous error.
+export function setDocumentSaving(
+  state: WorkspaceState,
+  id: DocumentId,
+  isSaving: boolean
+): WorkspaceState {
+  return updateDocument(state, id, (doc) => ({
+    ...doc,
+    isSaving,
+    lastError: isSaving ? null : doc.lastError,
+  }));
+}
+
+// Record a save failure on the document. Keeps the buffer dirty (text is
+// untouched) so the user never loses content to a failed write.
+export function setDocumentSaveError(
+  state: WorkspaceState,
+  id: DocumentId,
+  message: string
+): WorkspaceState {
+  return updateDocument(state, id, (doc) => ({
+    ...doc,
+    isSaving: false,
+    lastError: message,
+  }));
+}
+
 export type DiskStat = {
   path: string;
   // null means the file no longer exists on disk.

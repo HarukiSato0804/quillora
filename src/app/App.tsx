@@ -44,6 +44,8 @@ import {
   moveDocumentToPaneAt,
   newUntitledDocument,
   reloadDocumentFromDisk,
+  setDocumentSaveError,
+  setDocumentSaving,
   setDropActive,
   splitPaneMovingDocument,
   toggleFocusMode,
@@ -70,22 +72,35 @@ import {
   serializeWorkspace,
 } from "../editor/store/sessionStore";
 import {
+  collectDrafts,
+  parseDrafts,
+  recoverableDrafts,
+  serializeDrafts,
+} from "../editor/store/draftStore";
+import {
+  clearDrafts,
   confirmDiscardChanges,
+  confirmOverwriteExternalChange,
   confirmReloadFromDisk,
+  confirmRecoverDrafts,
   copyTextToClipboard,
   getRecentFiles,
+  isExternalChangeError,
+  loadDrafts,
   loadSession,
   pickMarkdownPaths,
   pickWorkspaceRoot,
   readMarkdownFiles,
   recordRecentFile,
   revealInFinder,
+  saveDrafts,
   saveMarkdownDocument,
   saveMarkdownDocumentAs,
   saveSession,
   scanWorkspace,
   showInfo,
   showOpenProblems,
+  showSaveError,
   statFiles,
   takePendingOpenPath,
   type ReadMarkdownFilesResult,
@@ -115,6 +130,9 @@ export function App() {
 
   const viewRef = useRef<EditorView | null>(null);
   const editorViewsRef = useRef(new Map<PaneId, EditorView>());
+  // Blocks the draft autosave from clearing drafts.json until the one-shot
+  // startup recovery pass has had a chance to read it.
+  const recoveryDoneRef = useRef(false);
 
   const active = activeDocument(workspace);
   const activeText = active?.text ?? "";
@@ -417,7 +435,11 @@ export function App() {
       if (!path) {
         return false;
       }
-      setWorkspace((ws) => markDocumentSaved(ws, doc.id, path, doc.text));
+      // Save As targets a freshly chosen path, so re-stat for the new mtime.
+      const [stat] = await statFiles([path]).catch(() => []);
+      setWorkspace((ws) =>
+        markDocumentSaved(ws, doc.id, path, doc.text, stat?.mtimeMs ?? null)
+      );
       void noteRecent(path);
       return true;
     },
@@ -431,6 +453,55 @@ export function App() {
     }
   }, [saveDocumentAsFor]);
 
+  // Writes one file-backed document, guarding against clobbering an external
+  // edit and surfacing any failure. The buffer stays dirty on failure so no
+  // content is lost. Returns true only when the write actually lands.
+  const writeFileBackedDocument = useCallback(
+    async (id: DocumentId): Promise<boolean> => {
+      const doc = workspaceRef.current.documents.find((d) => d.id === id);
+      if (!doc || doc.path === null) {
+        return false;
+      }
+      const path = doc.path;
+      setWorkspace((ws) => setDocumentSaving(ws, id, true));
+      try {
+        const result = await saveMarkdownDocument(path, doc.text, doc.fileMtimeMs);
+        setWorkspace((ws) =>
+          markDocumentSaved(ws, id, path, doc.text, result.mtimeMs)
+        );
+        return true;
+      } catch (error) {
+        if (isExternalChangeError(error)) {
+          const overwrite = await confirmOverwriteExternalChange(
+            doc.title
+          ).catch(() => false);
+          if (!overwrite) {
+            setWorkspace((ws) => setDocumentSaving(ws, id, false));
+            return false;
+          }
+          try {
+            // User chose to overwrite: write without the guard.
+            const forced = await saveMarkdownDocument(path, doc.text, null);
+            setWorkspace((ws) =>
+              markDocumentSaved(ws, id, path, doc.text, forced.mtimeMs)
+            );
+            return true;
+          } catch (forceError) {
+            const detail = String(forceError);
+            setWorkspace((ws) => setDocumentSaveError(ws, id, detail));
+            await showSaveError(doc.title, detail).catch(() => {});
+            return false;
+          }
+        }
+        const detail = String(error);
+        setWorkspace((ws) => setDocumentSaveError(ws, id, detail));
+        await showSaveError(doc.title, detail).catch(() => {});
+        return false;
+      }
+    },
+    []
+  );
+
   const saveDocument = useCallback(async () => {
     const doc = activeDocument(workspaceRef.current);
     if (!doc) {
@@ -440,25 +511,23 @@ export function App() {
       await saveDocumentAs();
       return;
     }
-    await saveMarkdownDocument(doc.path, doc.text);
-    setWorkspace((ws) => markDocumentSaved(ws, doc.id, doc.path!, doc.text));
-  }, [saveDocumentAs]);
+    await writeFileBackedDocument(doc.id);
+  }, [saveDocumentAs, writeFileBackedDocument]);
 
   // Saves every dirty document; untitled ones go through Save As dialogs
-  // one by one. Returns false as soon as the user cancels a dialog.
+  // one by one. Returns false as soon as a save is cancelled or fails.
   const saveAllDocuments = useCallback(async (): Promise<boolean> => {
     for (const doc of workspaceRef.current.documents.filter(isDirty)) {
       if (doc.path !== null) {
-        await saveMarkdownDocument(doc.path, doc.text);
-        setWorkspace((current) =>
-          markDocumentSaved(current, doc.id, doc.path!, doc.text)
-        );
+        if (!(await writeFileBackedDocument(doc.id))) {
+          return false;
+        }
       } else if (!(await saveDocumentAsFor(doc.id))) {
         return false;
       }
     }
     return true;
-  }, [saveDocumentAsFor]);
+  }, [saveDocumentAsFor, writeFileBackedDocument]);
 
   // All close paths (tab close button, middle click, Cmd+W, menu) go
   // through the close flow; the UI never removes documents directly. The
@@ -735,6 +804,54 @@ export function App() {
       .catch(() => {});
   }, []);
 
+  // Offers to restore unsaved edits left by a prior crash. Compares each draft
+  // against the matching open document's current text (which equals disk text
+  // for a freshly opened, non-dirty document), so it works regardless of how
+  // the document got opened — session restore or Finder "open with". A draft is
+  // recoverable only when its document is open, not already edited this session,
+  // and its text differs from what is loaded.
+  const recoverDrafts = useCallback(async () => {
+    try {
+      const drafts = parseDrafts(await loadDrafts().catch(() => null));
+      if (drafts.length === 0) {
+        return;
+      }
+      const ws = workspaceRef.current;
+      const recoverable = recoverableDrafts(
+        drafts,
+        ws.documents
+          .filter((doc) => doc.path !== null && !isDirty(doc))
+          .map((doc) => ({ path: doc.path as string, text: doc.text }))
+      );
+      if (recoverable.length === 0) {
+        await clearDrafts().catch(() => {});
+        return;
+      }
+      const accept = await confirmRecoverDrafts(recoverable.length).catch(
+        () => false
+      );
+      if (accept) {
+        setWorkspace((current) => {
+          let next = current;
+          for (const draft of recoverable) {
+            const doc = findDocumentByCanonicalPath(next, draft.path);
+            if (doc && !isDirty(doc)) {
+              next = updateDocumentText(next, doc.id, draft.text);
+            }
+          }
+          return next;
+        });
+      }
+      // Either way the drafts have been handled; drop them so we don't prompt
+      // again next launch.
+      await clearDrafts().catch(() => {});
+    } finally {
+      // Unblock the draft autosave only after recovery has read the store, so
+      // autosave can't clear it out from under us on a clean startup.
+      recoveryDoneRef.current = true;
+    }
+  }, []);
+
   // Session restore: rebuild the previous workspace once at startup.
   // The restore only replaces a single pristine untitled document, so it
   // can never clobber content the user already typed or a file opened
@@ -786,6 +903,15 @@ export function App() {
     void restore().catch(() => {});
   }, []);
 
+  // One-shot crash/draft recovery, run shortly after startup so session restore
+  // and any Finder "open with" document have settled into the workspace.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void recoverDrafts();
+    }, 1_500);
+    return () => clearTimeout(timer);
+  }, [recoverDrafts]);
+
   // Persist the session whenever the workspace settles for a moment.
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -793,6 +919,28 @@ export function App() {
         JSON.stringify(serializeWorkspace(workspaceRef.current))
       ).catch(() => {});
     }, 800);
+    return () => clearTimeout(timer);
+  }, [workspace]);
+
+  // Crash-recovery backup: persist unsaved edits for file-backed documents to a
+  // separate draft store shortly after they settle. Debounced (and only on a
+  // longer beat than session save) to stay sync-folder-friendly — drafts live
+  // in the app config dir, not the user's synced file, so this never churns the
+  // watched file itself. Clears the store once nothing is dirty.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      // Wait until startup recovery has consumed any prior drafts, so we never
+      // clear them before the user is offered a chance to restore.
+      if (!recoveryDoneRef.current) {
+        return;
+      }
+      const drafts = collectDrafts(workspaceRef.current, Date.now());
+      if (drafts.length === 0) {
+        void clearDrafts().catch(() => {});
+        return;
+      }
+      void saveDrafts(serializeDrafts(drafts)).catch(() => {});
+    }, 1_200);
     return () => clearTimeout(timer);
   }, [workspace]);
 
