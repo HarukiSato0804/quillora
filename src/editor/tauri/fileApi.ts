@@ -110,14 +110,68 @@ export async function recordRecentFile(path: string): Promise<string[]> {
   return invoke<string[]>("record_recent_file", { path });
 }
 
+// Sentinel the Rust side returns when a guarded write detects the file changed
+// on disk since `expectedMtimeMs`. Surfaced as a distinct error so the save
+// flow can prompt instead of clobbering.
+export const EXTERNAL_CHANGE_ERROR = "EXTERNAL_CHANGE";
+
+export type WriteResult = {
+  mtimeMs: number | null;
+};
+
 export async function saveMarkdownDocument(
   path: string,
-  contents: string
-): Promise<void> {
-  await invoke("write_markdown_file", {
+  contents: string,
+  expectedMtimeMs?: number | null
+): Promise<WriteResult> {
+  return invoke<WriteResult>("write_markdown_file", {
     path,
     contents,
+    expectedMtimeMs: expectedMtimeMs ?? null,
   });
+}
+
+export function isExternalChangeError(error: unknown): boolean {
+  return typeof error === "string" && error.includes(EXTERNAL_CHANGE_ERROR);
+}
+
+export async function saveDrafts(json: string): Promise<void> {
+  await invoke("save_drafts", { json });
+}
+
+export async function loadDrafts(): Promise<string | null> {
+  return invoke<string | null>("load_drafts");
+}
+
+export async function clearDrafts(): Promise<void> {
+  await invoke("clear_drafts");
+}
+
+export async function confirmOverwriteExternalChange(
+  title: string
+): Promise<boolean> {
+  return ask(
+    `"${title}" was changed on disk since you opened it.\nOverwrite the version on disk with your edits?`,
+    { title: "Quillora", kind: "warning" }
+  );
+}
+
+export async function showSaveError(
+  title: string,
+  detail: string
+): Promise<void> {
+  await message(`Could not save "${title}".\n\n${detail}`, {
+    title: "Quillora",
+    kind: "error",
+  });
+}
+
+export async function confirmRecoverDrafts(count: number): Promise<boolean> {
+  const noun = count === 1 ? "document" : "documents";
+  return ask(
+    `Quillora found unsaved changes for ${count} ${noun} from your last session.\nRestore them?`,
+    { title: "Quillora", kind: "warning" }
+  );
 }
 
 export async function saveMarkdownDocumentAs(
